@@ -38,6 +38,7 @@ PyTorch는 반드시 `cu128` 이상 빌드 필요 ([근거](docs/00_roadmap.md#5
 | [`docs/03_nn_surrogate_plan.md`](docs/03_nn_surrogate_plan.md) | NN 스터디 계획 + 대체모델 설계 |
 | [`docs/04_validation_report.md`](docs/04_validation_report.md) | 2단계 검증 리포트 |
 | **[`docs/05_paper_review.md`](docs/05_paper_review.md)** | **배경 논문 4편 정독 정리 + 연구 갭 도출** |
+| **[`docs/06_dataset_generator.md`](docs/06_dataset_generator.md)** | **3단계 학습 데이터 생성기 (설계·검증·잡은 버그)** |
 
 ### 배경 논문 4편
 
