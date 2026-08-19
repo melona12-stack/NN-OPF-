@@ -55,6 +55,11 @@ class TrainConfig:
     grad_clip: float = 2.0
 
     # 물리정보 손실 (P2 §3.3, §4.1). lam=0 이면 순수 지도학습 기준선.
+    #
+    # lam 은 **지도 항 대비 상대 가중치**다. 램프가 시작되는 시점에 두 항의
+    # 비를 재서 나눠 주므로 lam=1 이면 그 순간 둘이 같은 크기가 된다.
+    # 이 환산이 없으면 같은 숫자가 계통마다 전혀 다른 뜻이 된다 — 실측으로
+    # 물리/지도 비가 case30 은 2.2e3, case118 은 2.1e7 이었다.
     lam: float = 0.0
     lam_warmup: int = 20
     lam_ramp: int = 50
@@ -297,8 +302,23 @@ def train(
     hist: list[dict] = []
     t0 = time.time()
 
+    phys_ref = 1.0     # 물리 항을 지도 항과 같은 크기로 맞추는 환산계수
     for ep in range(cfg.epochs):
         lam = lambda_at(ep, cfg)
+        if lam > 0 and phys_ref == 1.0:
+            # λ 를 '지도 항 대비 몇 배' 로 해석되게 만든다. 두 항의 절대 크기가
+            # 계통마다 4자리씩 다르기 때문에(case30 2.2e3배, case118 2.1e7배)
+            # 이 환산 없이는 같은 숫자 λ 가 전혀 다른 뜻이 된다.
+            with torch.no_grad():
+                k = tr[: min(1024, len(tr))]
+                Vm0, Va0 = model(b.X[k])
+                s0 = supervised_loss(model, Vm0, Va0, b.Vm[k], b.Va[k]).item()
+                p0 = b.physics.loss(
+                    Vm0, Va0, b.p_spec[k], b.q_spec[k], b.outage[k]
+                ).item()
+            phys_ref = max(p0, 1e-12) / max(s0, 1e-12)
+            if verbose:
+                print(f"  [λ 환산] 물리/지도 = {phys_ref:.3e} (epoch {ep})")
         model.train()
         perm = tr[torch.randperm(len(tr))]
         tot = n_seen = 0.0
@@ -309,7 +329,7 @@ def train(
             sup = supervised_loss(model, Vm, Va, b.Vm[j], b.Va[j])
             loss = sup
             if lam > 0:
-                loss = loss + lam * b.physics.loss(
+                loss = loss + (lam / phys_ref) * b.physics.loss(
                     Vm, Va, b.p_spec[j], b.q_spec[j], b.outage[j]
                 )
             opt.zero_grad(set_to_none=True)
@@ -346,6 +366,7 @@ def train(
 
     model.load_state_dict(best_state)
     return {
+        "phys_ref": phys_ref,
         "history": hist,
         "best_epoch": best_epoch,
         "best_val": best,

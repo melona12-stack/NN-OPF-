@@ -24,7 +24,9 @@ from nnopf import generate_dataset, load_case, physics_residual  # noqa: E402
 from nnopf.case import PQ, SLACK  # noqa: E402
 from nnopf.models import IOLayout, PowerFlowMLP, SurrogateSpec  # noqa: E402
 from nnopf.physics_torch import ACPhysics  # noqa: E402
-from nnopf.train import TrainConfig, evaluate, lambda_at, prepare, train  # noqa: E402
+from nnopf.train import (  # noqa: E402
+    TrainConfig, evaluate, lambda_at, prepare, supervised_loss, train,
+)
 
 CASE = "case30"
 
@@ -297,3 +299,26 @@ def test_linear_baseline_fills_known_values(ds, sysm):
     known = sysm.bus_type != PQ
     assert torch.allclose(Vm[:, known], torch.as_tensor(ds.v_set[known], dtype=torch.float32))
     assert torch.all(Va[:, sysm.bus_type == SLACK] == 0)
+
+
+def test_lambda_is_relative_weight(ds):
+    """λ 는 '지도 항 대비 몇 배' 여야 한다 — 절대 크기에 휘둘리면 안 된다.
+
+    물리 항과 지도 항의 절대 크기 비는 계통마다 4자리씩 다르다
+    (case30 2.2e3, case118 2.1e7). 환산 없이 같은 λ 를 쓰면 한쪽에서는
+    무시되고 다른 쪽에서는 학습을 파괴한다.
+    """
+    b, model = prepare(ds, _spec(), split=ds.split_random(seed=0))
+    r = train(model, b, TrainConfig(epochs=12, lam=1.0, lam_warmup=0, lam_ramp=1,
+                                    seed=0, patience=10**6), verbose=False)
+    assert r["phys_ref"] > 1.0, "물리/지도 비가 측정되지 않았다"
+
+    # λ=1 이면 램프 시작 시점에 두 항이 같은 크기가 되어야 한다
+    b2, m2 = prepare(ds, _spec(), split=ds.split_random(seed=0))
+    k = torch.as_tensor(b2.split["train"][:256], dtype=torch.long)
+    with torch.no_grad():
+        Vm, Va = m2(b2.X[k])
+        s = supervised_loss(m2, Vm, Va, b2.Vm[k], b2.Va[k]).item()
+        p = b2.physics.loss(Vm, Va, b2.p_spec[k], b2.q_spec[k], b2.outage[k]).item()
+    scaled = p / (p / s)          # = s
+    assert abs(scaled - s) < 1e-6 * max(s, 1.0)
