@@ -194,12 +194,17 @@ def prepare(
     )
 
     t = lambda a, d=torch.float32: torch.as_tensor(np.asarray(a), dtype=d)
+    # 물리 손실 무차원화 기준: 학습 분할의 모선별 지정주입 RMS
+    ph32 = ACPhysics(sysm, torch.float32)
+    ph32.set_scale(
+        t(np.sqrt((p_spec[tr] ** 2).mean(0))), t(np.sqrt((q_spec[tr] ** 2).mean(0)))
+    )
     bundle = Bundle(
         sys=sysm, layout=layout, split=split,
         X=t(X), Vm=t(ds.Vm), Va=t(ds.Va),
         p_spec=t(p_spec), q_spec=t(q_spec),
         outage=t(ds.outage, torch.long),
-        physics=ACPhysics(sysm, torch.float32),
+        physics=ph32,
         physics64=ACPhysics(sysm, torch.float64),
     )
     return bundle, model
@@ -358,3 +363,66 @@ def save_run(path: str | Path, payload: dict) -> None:
 
 def spec_config_dict(spec: SurrogateSpec, cfg: TrainConfig) -> dict:
     return {"spec": asdict(spec), "train": asdict(cfg)}
+
+
+# --------------------------------------------------------------------------
+# 추론 속도
+# --------------------------------------------------------------------------
+@torch.no_grad()
+def benchmark(
+    model, b: Bundle, idx: np.ndarray, n_single: int = 200, batch: int = 64
+) -> dict:
+    """뉴턴-랩슨 대비 추론 속도. **단건과 배치를 나눠 잰다.**
+
+    P2 가 관찰한 대로 그래프가 작으면 단건 추론에서 가속 효과가 크게 줄어든다
+    (04 문서 §2.8). 하나로 뭉뚱그린 배속 숫자는 리뷰어가 바로 지적한다.
+    """
+    from nnopf.powerflow import solve_power_flow
+    from nnopf.ybus import make_ybus
+
+    model.eval()
+    ii = torch.as_tensor(np.asarray(idx), dtype=torch.long)
+    sub = ii[:n_single]
+
+    # 뉴턴-랩슨 — 상정사고가 없는 표본만 (Ybus 재사용이 공정)
+    import dataclasses
+
+    Ybus = make_ybus(b.sys)
+    plain = [int(k) for k in sub.tolist() if int(b.outage[k]) < 0][:n_single]
+    zero_g = np.zeros(len(b.sys.Pg0))
+    t0 = time.perf_counter()
+    for k in plain:
+        # 지정주입을 '음의 부하'로 넣는다. solve_power_flow 는
+        #   Psp = Cg @ Pg - Pd  로 지정값을 만들므로 Pg=0, Pd=-p_spec 이면
+        # 정확히 데이터셋과 같은 문제가 된다 (발전/부하 분해는 조류계산에 무관).
+        sysk = dataclasses.replace(
+            b.sys,
+            Pd=-b.p_spec[k].numpy().astype(float),
+            Qd=-b.q_spec[k].numpy().astype(float),
+            Qg0=zero_g,
+        )
+        solve_power_flow(sysk, Pg=zero_g, Ybus=Ybus, tol=1e-8)
+    nr_ms = (time.perf_counter() - t0) / max(len(plain), 1) * 1e3
+
+    # 대체모델 단건
+    t0 = time.perf_counter()
+    for k in sub.tolist():
+        model(b.X[k : k + 1])
+    single_ms = (time.perf_counter() - t0) / len(sub) * 1e3
+
+    # 대체모델 배치
+    reps = max(1, 2000 // batch)
+    t0 = time.perf_counter()
+    for r in range(reps):
+        s = (r * batch) % max(len(ii) - batch, 1)
+        model(b.X[ii[s : s + batch]])
+    batch_ms = (time.perf_counter() - t0) / (reps * batch) * 1e3
+
+    return {
+        "nr_ms": nr_ms,
+        "single_ms": single_ms,
+        "batch_ms": batch_ms,
+        "speedup_single": nr_ms / max(single_ms, 1e-9),
+        "speedup_batch": nr_ms / max(batch_ms, 1e-9),
+        "batch_size": batch,
+    }

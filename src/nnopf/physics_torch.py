@@ -72,6 +72,8 @@ class ACPhysics:
         # 잔차를 거는 자리 — 지정값이 있는 모선만 (05 문서 §7)
         self.mask_p = torch.as_tensor(sys.bus_type != SLACK, dtype=dtype)  # (nb,)
         self.mask_q = torch.as_tensor(sys.bus_type == PQ, dtype=dtype)
+        self.p_scale = None   # set_scale() 로 등록하면 물리 손실이 무차원화된다
+        self.q_scale = None
 
     # ------------------------------------------------------------------ 내부
     def _yv(
@@ -136,6 +138,22 @@ class ACPhysics:
         P, Q = self.injection(Vm, Va, outage)
         return (p_spec - P) * self.mask_p, (q_spec - Q) * self.mask_q
 
+    def set_scale(self, p_scale: torch.Tensor, q_scale: torch.Tensor) -> None:
+        r"""물리 손실을 무차원화할 기준 크기를 등록한다 ``(nb,)``.
+
+        .. important::
+           **λ 값은 손실 정규화 방식이 같아야만 논문 사이에 옮길 수 있다.**
+           우리 지도 손실은 표준화 공간이라 :math:`O(1)` 인데, 물리 잔차를
+           원단위 :math:`\mathrm{pu}^2` 로 두면 같은 숫자 λ 가 전혀 다른 상대
+           가중치를 뜻하게 된다. 실제로 P2 의 λ=3e-3 을 그대로 썼더니 우리
+           실험에서 가장 나쁜 설정이 됐다 (전압·물리가 같이 나빠지고 조기 종료).
+
+           그래서 잔차를 모선별 지정주입 크기로 나눠 무차원화한다. 그러면 λ 가
+           "지도 항 대비 몇 배" 라는 해석 가능한 값이 된다.
+        """
+        self.p_scale = p_scale.to(self.dtype).clamp(min=1e-3)
+        self.q_scale = q_scale.to(self.dtype).clamp(min=1e-3)
+
     def loss(
         self,
         Vm: torch.Tensor,
@@ -156,6 +174,8 @@ class ACPhysics:
         모선 수 비율에 따라 PV 항의 비중이 계통마다 달라진다.
         """
         dP, dQ = self.residual(Vm, Va, p_spec, q_spec, outage)
+        if getattr(self, "p_scale", None) is not None:
+            dP, dQ = dP / self.p_scale, dQ / self.q_scale
         n_pq = self.mask_q.sum().clamp(min=1.0)
         n_pv = (self.mask_p - self.mask_q).sum().clamp(min=1.0)
         pq_term = ((dP * self.mask_q) ** 2 + dQ**2).sum(-1) / n_pq
@@ -168,8 +188,9 @@ class ACPhysics:
 
         out = copy.copy(self)
         out.dtype = dtype
-        for name in ("G", "B", "mask_p", "mask_q"):
-            setattr(out, name, getattr(self, name).to(dtype))
+        for name in ("G", "B", "mask_p", "mask_q", "p_scale", "q_scale"):
+            v = getattr(self, name)
+            setattr(out, name, v if v is None else v.to(dtype))
         for name in ("yff", "yft", "ytf", "ytt"):
             re, im = getattr(self, name)
             setattr(out, name, (re.to(dtype), im.to(dtype)))
