@@ -1,0 +1,38 @@
+[
+  {
+    "case": "case30",
+    "seed": 2026,
+    "n_samples": 6000,
+    "n_attempted": 6000,
+    "n_diverged": 0,
+    "divergence_pct": 0.0,
+    "n1_samples": 1529,
+    "n1_kinds": 38,
+    "vm_min_mean": 0.95937,
+    "vm_min_worst": 0.8473,
+    "va_spread_mean_deg": 5.968,
+    "max_pf_residual_pu": 9.842686027328185e-09,
+    "gen_seconds": 13.23,
+    "unseen_n1_overlap": 0,
+    "path": "data/case30_seed2026_n6000.npz",
+    "size_mb": 3.4
+  },
+  {
+    "case": "case118",
+    "seed": 2026,
+    "n_samples": 20000,
+    "n_attempted": 20000,
+    "n_diverged": 0,
+    "divergence_pct": 0.0,
+    "n1_samples": 5092,
+    "n1_kinds": 177,
+    "vm_min_mean": 0.94268,
+    "vm_min_worst": 0.88929,
+    "va_spread_mean_deg": 33.237,
+    "max_pf_residual_pu": 2.2395348172661714e-09,
+    "gen_seconds": 66.22,
+    "unseen_n1_overlap": 0,
+    "path": "data/case118_seed2026_n20000.npz",
+    "size_mb": 47.6
+  }
+]

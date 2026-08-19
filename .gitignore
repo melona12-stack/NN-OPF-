@@ -3,6 +3,9 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .ipynb_checkpoints/
+# 데이터셋은 커밋하지 않는다 -- 시드가 고정되어 있어
+# scripts/s02_generate_dataset.py 로 어디서든 몇 분이면 재생성된다.
+# manifest.json 은 "무엇을 어떤 품질로 만들었는지"의 기록이라 남긴다.
 data/*.npz
 data/*.h5
 data/*.hdf5

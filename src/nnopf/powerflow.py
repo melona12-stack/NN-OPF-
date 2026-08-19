@@ -119,6 +119,7 @@ def solve_power_flow(
     Vm0: np.ndarray | None = None,
     Va0: np.ndarray | None = None,
     enforce_q_limits: bool = False,
+    Ybus=None,
     verbose: bool = False,
 ) -> PowerFlowResult:
     """뉴턴-랩슨 조류계산.
@@ -137,6 +138,10 @@ def solve_power_flow(
     enforce_q_limits
         True 면 PV 모선의 무효출력 한계 위반 시 PQ 로 전환해 다시 푼다.
         (OPF 검증 목적에서는 보통 False 로 두고 비교한다.)
+    Ybus
+        미리 만들어 둔 어드미턴스 행렬. 부하만 바뀌고 **토폴로지가 같은** 시나리오를
+        수천 건 풀 때 재사용하면 건당 약 10% 가 줄어든다 (데이터 생성기용).
+        토폴로지가 달라지면(N-1 등) 반드시 새로 넘겨야 한다.
 
     Returns
     -------
@@ -145,7 +150,7 @@ def solve_power_flow(
     Pg = sys.Pg0.copy() if Pg is None else np.asarray(Pg, dtype=float).copy()
     Vm_set = sys.Vg.copy() if Vm_set is None else np.asarray(Vm_set, dtype=float).copy()
 
-    Ybus = make_ybus(sys)
+    Ybus = make_ybus(sys) if Ybus is None else Ybus
     Cg = sys.Cg
     on = sys.gen_status.astype(bool)
 

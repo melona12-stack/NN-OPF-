@@ -10,7 +10,7 @@
 |---|---|---|
 | 1 | OPF 기본 개념 학습 + 직접 구현 | ✅ 완료 |
 | 2 | pandapower 대조 정합성 검증 | ✅ 완료 — 22/22 테스트 통과 |
-| 3 | NN 관련 스터디 | 📋 계획 수립 + **배경 논문 4편 정독 완료** |
+| 3 | NN 관련 스터디 | 🔄 진행 중 — 논문 4편 정독 ✅, **데이터 생성기 ✅** |
 | 4 | NN 으로 조류계산 대체(학습) | ⬜ |
 | 5 | 대체모델을 포함한 OPF | ⬜ |
 
@@ -60,14 +60,34 @@ src/nnopf/
 ├── ybus.py        어드미턴스 행렬 Ybus 직접 구성
 ├── powerflow.py   뉴턴-랩슨 조류계산 (해석적 야코비안)
 ├── opf.py         AC-OPF 비선형계획 (해석적 그래디언트)
-└── compare.py     pandapower 대조 검증
+├── compare.py     pandapower 대조 검증
+└── dataset.py     학습 데이터 생성 (샘플링 + 라벨 + 물리 잔차)
 
 scripts/
-└── s01_validate_vs_pandapower.py
+├── s01_validate_vs_pandapower.py   2단계 정합성 검증
+└── s02_generate_dataset.py         3단계 데이터 생성
 
 tests/
-└── test_nnopf.py  회귀 테스트 22개
+├── test_nnopf.py    1~2단계 회귀 테스트 22개
+└── test_dataset.py  3단계 회귀 테스트 22개
 ```
+
+### 학습 데이터 (3단계)
+
+```bash
+.venv/bin/python scripts/s02_generate_dataset.py       # case30 + case118
+```
+
+| 계통 | 표본 | 발산 | N-1 | 생성 시간 (4코어) | 조류방정식 잔차 |
+|---|---|---|---|---|---|
+| case30 | 6,000 | 0% | 25.5% (38종) | 13초 | 9.8e-09 pu |
+| case118 | 20,000 | 0% | 25.5% (177종) | 66초 | 2.2e-09 pu |
+
+설정은 P2(PI-GAT) §4.1 을 그대로 복제했습니다 — **P2도 같은 pandapower
+`case30`/`case118`을 쓰므로 결과를 논문 수치와 직접 비교할 수 있습니다.**
+
+**데이터 파일은 커밋하지 않습니다.** 시드가 고정되어 있어 어느 컴퓨터에서든
+몇 분이면 같은 데이터가 재생성됩니다 (`data/manifest.json` 에 생성 기록만 남김).
 
 ### 설계 원칙
 
