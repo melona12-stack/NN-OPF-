@@ -1,6 +1,6 @@
 # 배경 논문
 
-정독 정리는 [`../docs/05_paper_review.md`](../docs/05_paper_review.md) 를 보세요.
+정독 정리는 [`../docs/04_paper_review.md`](../docs/04_paper_review.md) 를 보세요.
 
 | 파일 | 논문 | 라이선스 |
 |---|---|---|

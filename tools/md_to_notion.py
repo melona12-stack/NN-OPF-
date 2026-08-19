@@ -7,15 +7,28 @@ Notion 은 표준 마크다운과 몇 군데가 다르다.
 * 인라인 수식: ``$x$`` 가 아니라 백틱을 낀 ``$`x`$`` 형식이다.
 * 여러 줄 인용: ``>`` 를 줄마다 쓰면 별개 블록이 되므로 ``<br>`` 로 이어야 한다.
 * 페이지 제목: 본문 맨 위의 ``# 제목`` 은 넣지 않는다 (properties 로 전달).
+* 강조 상자: GitHub 경고문법 ``> [!NOTE]`` 을 Notion ``<callout>`` 으로 바꾼다.
+  이러면 한 소스로 GitHub 와 Notion 양쪽에서 강조 상자가 나온다.
 
 이 스크립트는 ``docs/*.md`` 를 그 규칙에 맞게 바꾼다. 코드블록 안은 건드리지 않는다.
 """
 
 from __future__ import annotations
 
+import json
 import re
 import sys
 from pathlib import Path
+
+# GitHub 경고문법 -> Notion 콜아웃 (아이콘, 배경색)
+ALERTS = {
+    "NOTE": ("💡", "blue_bg"),
+    "TIP": ("✅", "green_bg"),
+    "IMPORTANT": ("⭐", "purple_bg"),
+    "WARNING": ("⚠️", "yellow_bg"),
+    "CAUTION": ("🚨", "red_bg"),
+}
+_ALERT_RE = re.compile(r"^\[!(" + "|".join(ALERTS) + r")\]\s*(.*)$")
 
 
 def _split_table_row(line: str) -> list[str]:
@@ -81,14 +94,27 @@ def _convert_tables(lines: list[str]) -> list[str]:
 
 
 def _merge_quotes(lines: list[str]) -> list[str]:
-    """연속된 ``>`` 줄을 ``<br>`` 로 이어 하나의 인용 블록으로 만든다."""
+    """인용 블록을 Notion 형식으로 바꾼다.
+
+    ``> [!NOTE]`` 로 시작하면 콜아웃으로, 아니면 ``<br>`` 로 이은 인용문으로.
+    """
     out: list[str] = []
     buf: list[str] = []
 
     def flush() -> None:
-        if buf:
+        if not buf:
+            return
+        alert = _ALERT_RE.match(buf[0])
+        if alert:
+            icon, color = ALERTS[alert.group(1)]
+            head = alert.group(2).strip()
+            body = ([head] if head else []) + buf[1:]
+            out.append(f'<callout icon="{icon}" color="{color}">')
+            out.extend("\t" + ln for ln in body)
+            out.append("</callout>")
+        else:
             out.append("> " + "<br>".join(buf))
-            buf.clear()
+        buf.clear()
 
     for line in lines:
         if line.startswith(">"):
@@ -118,8 +144,26 @@ def _convert_inline_math(text: str) -> str:
     return _INLINE_MATH_RE.sub(repl, text)
 
 
-def convert(md: str) -> tuple[str, str]:
+_DOC_LINK_RE = re.compile(r"\]\((?:\.\./)?(?:docs/)?(\d\d_[a-z_]+\.md)(#[^)]*)?\)")
+
+
+def _rewrite_doc_links(text: str, links: dict[str, str]) -> str:
+    """문서 간 상대링크(``](01_x.md)``)를 Notion 페이지 URL 로 바꾼다.
+
+    Notion 에는 ``docs/`` 디렉터리가 없으므로 상대링크가 그대로면 깨진다.
+    매핑에 없는 파일은 손대지 않는다.
+    """
+    def repl(m: re.Match[str]) -> str:
+        url = links.get(m.group(1))
+        return f"]({url})" if url else m.group(0)
+
+    return _DOC_LINK_RE.sub(repl, text)
+
+
+def convert(md: str, links: dict[str, str] | None = None) -> tuple[str, str]:
     """마크다운 문서를 ``(제목, Notion 본문)`` 으로 변환한다."""
+    if links:
+        md = _rewrite_doc_links(md, links)
     lines = md.splitlines()
 
     # 맨 위 H1 을 제목으로 떼어낸다.
@@ -174,8 +218,17 @@ def main() -> int:
     if len(sys.argv) < 2:
         print("사용법: md_to_notion.py <파일.md> [...]", file=sys.stderr)
         return 2
+
+    link_file = Path(__file__).resolve().parent.parent / "docs" / "notion_links.json"
+    links: dict[str, str] = {}
+    if link_file.exists():
+        raw = json.loads(link_file.read_text(encoding="utf-8"))
+        links = {k: v for k, v in raw.items() if not k.startswith("_")}
+
     for path in sys.argv[1:]:
-        title, body = convert(Path(path).read_text(encoding="utf-8"))
+        if path.endswith(".notion.md"):
+            continue  # 이미 변환된 산출물 (glob 로 딸려 들어온 경우)
+        title, body = convert(Path(path).read_text(encoding="utf-8"), links)
         out = Path(path).with_suffix(".notion.md")
         out.write_text(body, encoding="utf-8")
         print(f"{path} -> {out}  (제목: {title})")

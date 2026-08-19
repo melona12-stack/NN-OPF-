@@ -1,0 +1,10 @@
+{
+  "_comment": "docs/*.md -> Notion 페이지 URL 매핑. tools/md_to_notion.py 가 변환할 때 문서 간 상대링크를 이 URL 로 바꿔 준다. 페이지를 새로 만들면 여기만 고치면 된다.",
+  "00_overview.md": "https://app.notion.com/p/3c15951667228151b172e90e55f449e5",
+  "01_power_flow_and_opf.md": "https://app.notion.com/p/3c159516672281bd9335e2d309d23934",
+  "02_validation.md": "https://app.notion.com/p/3c15951667228136b7cbf5370275e4f1",
+  "03_neural_networks.md": "https://app.notion.com/p/3c15951667228191a711e66b62801285",
+  "04_paper_review.md": "https://app.notion.com/p/3c159516672281b5b625e2a7ca44c5c8",
+  "05_dataset_generator.md": "https://app.notion.com/p/3c1595166722817ea9e4e9d567c53fb0",
+  "06_appendix_reference.md": "https://app.notion.com/p/3c159516672281838ac3e768f38797fa"
+}
