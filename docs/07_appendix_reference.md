@@ -1,4 +1,4 @@
-# 06 · 부록 — Stanford ASL *Unbalanced OPF Toolkit* 분석
+# 07 · 부록 — Stanford ASL *Unbalanced OPF Toolkit* 분석
 
 > **선수 지식**: [01](01_power_flow_and_opf.md)(모선 분류·OPF 정식화).
 > **읽고 나면**: "OPF 안의 조류계산을 갈아끼운다"는 말이 코드 수준에서 정확히
@@ -248,5 +248,5 @@ ControllableLoad                      (제어 가능 부하 = 결정변수)
 
 **→ [00 · 프로젝트 전체 그림](00_overview.md)** 으로 돌아가 현재 진행 상황을 확인하세요.
 
-지금 위치는 **M3 5~6주차 완료 / 7~8주차 대기**이고, 다음 작업은
-**MLP 기준선 학습**입니다.
+지금 위치는 **M3 완료 / M4 진입**이고, 4단계 기준선 결과는
+[06 문서](06_surrogate_training.md)에 있습니다.

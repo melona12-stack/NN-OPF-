@@ -426,9 +426,9 @@ sp = ds.split_unseen_n1()    # {'train':…, 'val':…, 'test':…}
 
 ## 14. 다음에 읽을 것
 
-본편은 여기까지입니다. 부록으로 **참고자료 사이트 분석**이 남아 있습니다.
-프로젝트 초기에 "OPF 안의 조류계산을 갈아끼우는 자리"가 어떤 모양이어야 하는지를
-정의해 준 자료입니다. 지금 바로 필요하지는 않지만, 5단계 설계에 들어갈 때
-다시 보게 됩니다.
+데이터가 준비됐으니 이제 **실제로 신경망을 학습시킬** 차례입니다.
 
-**→ [06 · 부록: Stanford ASL Unbalanced OPF Toolkit](06_appendix_reference.md)**
+**→ [06 · 조류계산 대체모델 학습](06_surrogate_training.md)**
+
+그 뒤에 부록으로 [07 · Stanford ASL 참고자료](07_appendix_reference.md)가 있습니다.
+5단계 설계에 들어갈 때 다시 보게 됩니다.

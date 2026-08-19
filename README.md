@@ -41,7 +41,8 @@ PyTorch는 반드시 `cu128` 이상 빌드 필요 ([근거](docs/00_overview.md#
 | [`03_neural_networks.md`](docs/03_neural_networks.md) | 신경망 기초(뉴런부터) + 6주 커리큘럼 + 대체모델 설계 | 01 |
 | [`04_paper_review.md`](docs/04_paper_review.md) | 배경 논문 4편 정독 + **연구 갭 3개 도출** | 01, 03 |
 | [`05_dataset_generator.md`](docs/05_dataset_generator.md) | 학습 데이터 생성기 (설계·검증·잡은 버그 2개) | 01, 03, 04 |
-| [`06_appendix_reference.md`](docs/06_appendix_reference.md) | 부록 — Stanford ASL 참고자료 분석 (5단계에서 다시 봄) | 01 |
+| [`06_surrogate_training.md`](docs/06_surrogate_training.md) | **4단계 대체모델 학습 — 기준선 결과와 잡은 버그 3개** | 03, 05 |
+| [`07_appendix_reference.md`](docs/07_appendix_reference.md) | 부록 — Stanford ASL 참고자료 분석 (5단계에서 다시 봄) | 01 |
 
 같은 내용이 Notion에도 정리되어 있습니다 (`tools/md_to_notion.py` 로 변환).
 

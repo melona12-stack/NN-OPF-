@@ -1,0 +1,65 @@
+{
+  "case": "case30",
+  "n_samples": 6000,
+  "data_seed": 2026,
+  "split": "random",
+  "spec": {
+    "hidden": 128,
+    "layers": 3,
+    "activation": "silu",
+    "dropout": 0.0,
+    "vm_head": "scaled",
+    "vm_margin": 0.05
+  },
+  "train": {
+    "epochs": 300,
+    "batch": 64,
+    "lr": 0.002,
+    "weight_decay": 1e-05,
+    "grad_clip": 2.0,
+    "lam": 0.0,
+    "lam_warmup": 20,
+    "lam_ramp": 50,
+    "patience": 60,
+    "lr_patience": 30,
+    "seed": 0
+  },
+  "results": [
+    {
+      "model": "linear",
+      "metrics": {
+        "n": 900,
+        "vm_mae": 5.981183272820932e-05,
+        "vm_max": 0.011727392673492432,
+        "va_mae": 0.000664806295748829,
+        "va_max": 0.07002236600965261,
+        "p_mismatch": 0.04228797661315277,
+        "q_mismatch": 0.01305709060141448,
+        "p_mismatch_max": 0.08744873555158751,
+        "q_mismatch_max": 0.025776644240460923,
+        "p_over_load_pct": 1.3260118188903305,
+        "residual_max": 0.08744873555158751,
+        "vlim_viol_pct": 0.4
+      }
+    },
+    {
+      "lam": 0.0,
+      "metrics": {
+        "n": 900,
+        "vm_mae": 0.0012362525441028454,
+        "vm_max": 0.1079069972038269,
+        "va_mae": 0.0058798253354419155,
+        "va_max": 0.15971239283680916,
+        "p_mismatch": 0.4905295934342346,
+        "q_mismatch": 0.19263437308730683,
+        "p_mismatch_max": 0.35907970267773204,
+        "q_mismatch_max": 0.2534114176302858,
+        "p_over_load_pct": 15.381394204776297,
+        "residual_max": 0.35907970267773204,
+        "vlim_viol_pct": 0.0
+      },
+      "best_epoch": 239,
+      "seconds": 347.38513374328613
+    }
+  ]
+}
