@@ -10,9 +10,13 @@
 |---|---|---|
 | 1 | OPF 기본 개념 학습 + 직접 구현 | ✅ 완료 |
 | 2 | pandapower 대조 정합성 검증 | ✅ 완료 — 22/22 테스트 통과 |
-| 3 | NN 관련 스터디 | 📋 계획 수립 완료 |
+| 3 | NN 관련 스터디 | 📋 계획 수립 + **배경 논문 4편 정독 완료** |
 | 4 | NN 으로 조류계산 대체(학습) | ⬜ |
 | 5 | 대체모델을 포함한 OPF | ⬜ |
+
+**개발 환경**: 현재 CPU 4코어 / 15GB RAM.
+**RTX 5060**(Blackwell, 8GB GDDR7, sm_120) 도입 예정 —
+PyTorch는 반드시 `cu128` 이상 빌드 필요 ([근거](docs/00_roadmap.md#5-계산-자원--rtx-5060-도입-반영)).
 
 ### 1~2단계 검증 결과 요약
 
@@ -28,11 +32,25 @@
 
 | 문서 | 내용 |
 |---|---|
-| [`docs/00_roadmap.md`](docs/00_roadmap.md) | 12개월 마일스톤, 논문 방향, 위험 요소 |
+| [`docs/00_roadmap.md`](docs/00_roadmap.md) | 12개월 마일스톤, 논문 방향(GAP 3개), 계산자원, 위험 요소 |
 | [`docs/01_opf_basics.md`](docs/01_opf_basics.md) | OPF 이론 (per-unit부터 LMP까지) |
 | [`docs/02_reference_uot_toolkit.md`](docs/02_reference_uot_toolkit.md) | Stanford ASL 참고자료 정리 |
 | [`docs/03_nn_surrogate_plan.md`](docs/03_nn_surrogate_plan.md) | NN 스터디 계획 + 대체모델 설계 |
 | [`docs/04_validation_report.md`](docs/04_validation_report.md) | 2단계 검증 리포트 |
+| **[`docs/05_paper_review.md`](docs/05_paper_review.md)** | **배경 논문 4편 정독 정리 + 연구 갭 도출** |
+
+### 배경 논문 4편
+
+| # | 논문 | 역할 | 단계 |
+|---|---|---|---|
+| P1 | Surrogate Modeling for Solving OPF: A Review (*Sustainability* 2024) | 분야 지형도 | 0 |
+| P2 | Power Flow Surrogate via Physics-Informed Graph Attention Network (*Energies* 2026) | 조류계산 대체 | **4** |
+| P3 | ICNN-Assisted OPF in Distribution Networks (arXiv 2024) | 볼록 대체모델 삽입 | **5** |
+| P4 | Enhanced OPF Using a Trained NN Surrogate (arXiv 2026) | MILP 정확 인코딩 | **5** |
+
+네 편이 하나의 이야기로 이어지고 그 끝에 빈칸이 셋 있습니다 —
+**"그래프 + 물리정보 + 볼록성"을 동시에 만족하는 대체모델이 아직 없습니다.**
+상세는 [`docs/05_paper_review.md`](docs/05_paper_review.md) §5.
 
 ## 코드 구조
 
