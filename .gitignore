@@ -9,3 +9,6 @@ data/*.hdf5
 results/*.pt
 results/*.ckpt
 .DS_Store
+
+# Notion 변환 산출물 (tools/md_to_notion.py 로 재생성 가능)
+*.notion.md
