@@ -1,0 +1,77 @@
+========================================================================
+ nnopf 2단계 정합성 검증 : 직접 구현 vs pandapower
+========================================================================
+[PASS]    case9  PF
+         max |dVm| [pu]             3.775e-15
+         max |dVa| [rad]            4.441e-15
+         max |dP_bus| [pu]          5.551e-14
+         max |dQ_bus| [pu]          3.197e-14
+         my mismatch [pu]           5.529e-14
+         iterations                 4.000e+00
+[PASS]    case9  OPF
+         my cost                    5.312e+03
+         pandapower cost            5.312e+03
+         abs cost diff              9.787e-06
+         rel cost diff              1.842e-09
+         max |dVm| [pu]             8.962e-07
+         eq residual [pu]           9.531e-14
+         solve time [s]             1.468e-01
+[PASS]   case14  PF
+         max |dVm| [pu]             6.197e-12
+         max |dVa| [rad]            6.722e-12
+         max |dP_bus| [pu]          6.286e-11
+         max |dQ_bus| [pu]          7.808e-11
+         my mismatch [pu]           5.412e-15
+         iterations                 4.000e+00
+[PASS]   case14  OPF
+         my cost                    8.082e+03
+         pandapower cost            8.082e+03
+         abs cost diff              3.193e-04
+         rel cost diff              3.951e-08
+         max |dVm| [pu]             1.376e-06
+         eq residual [pu]           2.681e-11
+         solve time [s]             8.991e-02
+[PASS]   case30  PF
+         max |dVm| [pu]             8.938e-12
+         max |dVa| [rad]            1.110e-11
+         max |dP_bus| [pu]          4.904e-11
+         max |dQ_bus| [pu]          7.896e-11
+         my mismatch [pu]           1.249e-14
+         iterations                 4.000e+00
+[PASS]   case30  OPF
+         my cost                    5.754e+02
+         pandapower cost            5.754e+02
+         abs cost diff              7.312e-05
+         rel cost diff              1.271e-07
+         max |dVm| [pu]             2.242e-05
+         eq residual [pu]           1.068e-10
+         solve time [s]             1.324e-01
+[PASS]   case57  PF
+         max |dVm| [pu]             4.552e-15
+         max |dVa| [rad]            7.550e-15
+         max |dP_bus| [pu]          1.258e-14
+         max |dQ_bus| [pu]          2.776e-14
+         my mismatch [pu]           1.230e-14
+         iterations                 5.000e+00
+[FAIL]   case57  OPF
+         ! pandapower runopp 실패(모든 초기치): Optimal Power Flow did not converge!
+[PASS]  case118  PF
+         max |dVm| [pu]             6.661e-16
+         max |dVa| [rad]            4.441e-15
+         max |dP_bus| [pu]          7.538e-14
+         max |dQ_bus| [pu]          8.815e-14
+         my mismatch [pu]           7.650e-14
+         iterations                 5.000e+00
+[PASS]  case118  OPF
+         my cost                    1.297e+05
+         pandapower cost            1.297e+05
+         abs cost diff              1.934e-03
+         rel cost diff              1.491e-08
+         max |dVm| [pu]             1.105e-04
+         eq residual [pu]           4.768e-10
+         solve time [s]             4.373e+01
+         ! 솔버 종료 메시지: Iteration limit reached (실행가능성/비용은 아래 지표로 판정)
+         ! 비용은 같은데 전압이 1.10e-04 pu 다릅니다 — 최적해가 평평할 수 있습니다.
+========================================================================
+ 결과: 9/10 통과
+========================================================================

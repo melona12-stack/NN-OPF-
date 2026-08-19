@@ -1,0 +1,12 @@
+# 1~2단계 (OPF 구현 + pandapower 정합성 검증)
+numpy>=1.26
+scipy>=1.11
+pandas>=2.0
+matplotlib>=3.8
+pandapower>=3.0
+
+# 3~5단계 (신경망 대체모델)
+torch>=2.2
+
+# 개발
+pytest>=8.0
