@@ -108,7 +108,7 @@ def _merge_quotes(lines: list[str]) -> list[str]:
         if alert:
             icon, color = ALERTS[alert.group(1)]
             head = alert.group(2).strip()
-            body = ([head] if head else []) + buf[1:]
+            body = ([f"**{head}**"] if head else []) + buf[1:]
             out.append(f'<callout icon="{icon}" color="{color}">')
             out.extend("\t" + ln for ln in body)
             out.append("</callout>")
