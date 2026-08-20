@@ -39,6 +39,7 @@ class LinearSurrogate(nn.Module):
         self.register_buffer("v_set", torch.as_tensor(v_set, dtype=torch.float32))
         self.register_buffer("pq_idx", torch.as_tensor(layout.pq, dtype=torch.long))
         self.register_buffer("va_idx", torch.as_tensor(layout.nonslack, dtype=torch.long))
+        self.register_buffer("va_ref", torch.as_tensor(layout.va_ref, dtype=torch.float32))
 
     @property
     def n_params(self) -> int:
@@ -49,7 +50,7 @@ class LinearSurrogate(nn.Module):
         vm, va = h[:, : self.n_vm], h[:, self.n_vm :]
         b = x.shape[0]
         Vm = self.v_set.expand(b, self.nb).index_copy(1, self.pq_idx, vm)
-        Va = torch.zeros(b, self.nb, dtype=vm.dtype).index_copy(1, self.va_idx, va)
+        Va = self.va_ref.expand(b, self.nb).index_copy(1, self.va_idx, va)
         return Vm, Va
 
 

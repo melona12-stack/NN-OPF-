@@ -322,3 +322,37 @@ def test_lambda_is_relative_weight(ds):
         p = b2.physics.loss(Vm, Va, b2.p_spec[k], b2.q_spec[k], b2.outage[k]).item()
     scaled = p / (p / s)          # = s
     assert abs(scaled - s) < 1e-6 * max(s, 1.0)
+
+
+# ---------------------------------------------------------------- 슬랙 기준위상
+def test_slack_reference_angle_is_not_assumed_zero():
+    """슬랙 위상을 0 으로 박으면 case118 에서 30° 오차가 통째로 생긴다.
+
+    06 문서 §7.4 의 회귀 테스트. ``case118`` 은 슬랙(모선 68)의 기준위상이
+    30° 라서, 두 대체모델 모두 그 값을 그대로 채워야 한다.
+    """
+    for case in ("case30", "case118"):
+        sysm = load_case(case)
+        layout = IOLayout(sysm)
+        sl = np.flatnonzero(sysm.bus_type == SLACK)
+        assert np.allclose(layout.va_ref[sl], sysm.Va0[sl])
+        assert np.allclose(np.delete(layout.va_ref, sl), 0.0)
+
+    sysm = load_case("case118")
+    assert abs(IOLayout(sysm).va_ref[sysm.bus_type == SLACK][0] - np.pi / 6) < 1e-12
+
+
+def test_models_fill_slack_angle_with_reference():
+    """MLP 와 선형 기준선 모두 슬랙 위상을 기준값으로 채운다."""
+    ds = generate_dataset("case118", n_samples=24, seed=3, workers=2, verbose=False)
+    from nnopf.baselines import fit_linear
+
+    layout = IOLayout(load_case("case118"))
+    b, model = prepare(ds, SurrogateSpec(hidden=16, layers=1), case="case118")
+    lin = fit_linear(ds, layout, np.arange(len(ds.Vm)))
+    sl = np.flatnonzero(load_case("case118").bus_type == SLACK)
+    for m in (model, lin):
+        _, Va = m(b.X[:4])
+        assert torch.allclose(
+            Va[:, sl], torch.full_like(Va[:, sl], float(np.pi / 6)), atol=1e-6
+        )

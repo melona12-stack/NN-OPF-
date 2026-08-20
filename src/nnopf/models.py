@@ -119,6 +119,10 @@ class IOLayout:
         self.nl = len(sys.f_bus)
         self.pq = np.flatnonzero(sys.bus_type == PQ)
         self.nonslack = np.flatnonzero(sys.bus_type != SLACK)
+        # 슬랙 기준위상. **0 이라고 가정하면 안 된다** — pandapower ``case118``
+        # 은 슬랙(모선 68)의 기준위상이 30° 다. 자세한 사연은 06 문서 §7.4.
+        self.va_ref = np.zeros(self.nb)
+        self.va_ref[sys.bus_type == SLACK] = sys.Va0[sys.bus_type == SLACK]
         self.in_dim = 4 * self.nb + self.nl
         self.out_dim = len(self.pq) + len(self.nonslack)
 
@@ -172,6 +176,7 @@ class PowerFlowMLP(nn.Module):
         buf("in_mean", in_mean)
         buf("in_std", in_std)
         buf("v_set", v_set)
+        buf("va_ref", layout.va_ref)
         buf("vm_lo", vm_lo)
         buf("vm_hi", vm_hi)
         buf("va_mean", va_mean)
@@ -220,7 +225,5 @@ class PowerFlowMLP(nn.Module):
 
         b = x.shape[0]
         Vm = self.v_set.expand(b, self.nb).index_copy(1, self.pq_idx, vm)
-        Va = torch.zeros(b, self.nb, dtype=vm.dtype, device=vm.device).index_copy(
-            1, self.va_idx, va
-        )
+        Va = self.va_ref.expand(b, self.nb).index_copy(1, self.va_idx, va)
         return Vm, Va
