@@ -10,8 +10,8 @@
 |---|---|---|
 | 1 | OPF 기본 개념 학습 + 직접 구현 | ✅ 완료 |
 | 2 | pandapower 대조 정합성 검증 | ✅ 완료 — 기계정밀도 일치 |
-| 3 | NN 관련 스터디 + 학습 데이터 생성 | 🔄 진행 중 — 논문 4편 정독 ✅, **데이터 생성기 ✅** |
-| 4 | NN 으로 조류계산 대체(학습) | ⬜ |
+| 3 | NN 관련 스터디 + 학습 데이터 생성 | ✅ 완료 — 논문 4편 정독 ✅, 데이터 생성기 ✅ |
+| 4 | NN 으로 조류계산 대체(학습) | 🔄 진행 중 — **MLP 기준선 ✅**, GNN ⬜ |
 | 5 | 대체모델을 포함한 OPF | ⬜ |
 
 **개발 환경**: 현재 CPU 4코어 / 15GB RAM.
@@ -68,15 +68,21 @@ src/nnopf/
 ├── powerflow.py   뉴턴-랩슨 조류계산 (해석적 야코비안)
 ├── opf.py         AC-OPF 비선형계획 (해석적 그래디언트)
 ├── compare.py     pandapower 대조 검증
-└── dataset.py     학습 데이터 생성 (샘플링 + 라벨 + 물리 잔차)
+├── dataset.py     학습 데이터 생성 (샘플링 + 라벨 + 물리 잔차)
+├── physics_torch.py  조류방정식 잔차의 PyTorch 판 (물리손실용)
+├── models.py      MLP 대체모델 (스케일링 인자 헤드 + 선형 지름길)
+├── train.py       학습 루프 · 평가 지표 · λ 스케줄
+└── baselines.py   선형 최소제곱 비교군
 
 scripts/
 ├── s01_validate_vs_pandapower.py   2단계 정합성 검증
-└── s02_generate_dataset.py         3단계 데이터 생성
+├── s02_generate_dataset.py         3단계 데이터 생성
+└── s03_train_surrogate.py          4단계 대체모델 학습
 
 tests/
-├── test_nnopf.py    1~2단계 회귀 테스트 22개
-└── test_dataset.py  3단계 회귀 테스트 22개
+├── test_nnopf.py      1~2단계 회귀 테스트 22개
+├── test_dataset.py    3단계 회귀 테스트 22개
+└── test_surrogate.py  4단계 회귀 테스트 22개
 ```
 
 ### 학습 데이터 (3단계)
@@ -112,7 +118,7 @@ python3 -m venv .venv
 # 정합성 검증 실행
 .venv/bin/python scripts/s01_validate_vs_pandapower.py
 
-# 회귀 테스트 (44개)
+# 회귀 테스트 (66개)
 .venv/bin/python -m pytest tests/ -q
 ```
 
