@@ -100,32 +100,44 @@
       "problemMatcher": []
     },
     {
-      "label": "15. 측정 — 속도 CPU vs GPU (case30)",
+      "label": "15. 기준선 확정 — case118 60,000 표본 정식 학습 (15분)",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s03_train_surrogate.py --case case118 -n 60000 --epochs 1500 --tag _final",
+      "problemMatcher": []
+    },
+    {
+      "label": "16. 기준선 확정 — case30 30,000 표본 정식 학습 (5분)",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s03_train_surrogate.py --case case30 -n 30000 --epochs 1500 --tag _final",
+      "problemMatcher": []
+    },
+    {
+      "label": "17. 측정 — 속도 CPU vs GPU (case30)",
       "type": "shell",
       "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s05_device_benchmark.py --case case30",
       "problemMatcher": []
     },
     {
-      "label": "16. 측정 — 속도 CPU vs GPU (case118)",
+      "label": "18. 측정 — 속도 CPU vs GPU (case118)",
       "type": "shell",
       "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s05_device_benchmark.py --case case118 --epochs 3",
       "problemMatcher": []
     },
     {
-      "label": "17. 검사 — 회귀 테스트 전체 (30분)",
+      "label": "19. 검사 — 회귀 테스트 전체 (30분)",
       "type": "shell",
       "command": "${workspaceFolder}/.venv/Scripts/python.exe -m pytest tests/ -q",
       "problemMatcher": [],
       "group": "test"
     },
     {
-      "label": "18. 업로드 — 결과를 GitHub 로",
+      "label": "20. 업로드 — 결과를 GitHub 로",
       "type": "shell",
       "command": "powershell -ExecutionPolicy Bypass -File ${workspaceFolder}/scripts/gpu_run.ps1 s03_train_surrogate.py --case case118 --epochs 1200 --tag _gpu",
       "problemMatcher": []
     },
     {
-      "label": "19. 확인 — 데이터가 내 것과 같은가 (지문 찍기)",
+      "label": "21. 확인 — 데이터가 내 것과 같은가 (지문 찍기)",
       "type": "shell",
       "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s06_data_fingerprint.py",
       "problemMatcher": []
