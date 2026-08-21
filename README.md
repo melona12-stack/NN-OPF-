@@ -144,7 +144,21 @@ python -m venv .venv
 python scripts/s00_check_env.py
 ```
 
-### GPU (선택)
+### GPU 실험 — 클라우드에서 개발, 로컬 GPU 에서 실행
+
+코드는 클라우드 세션에서 쓰고 CPU 로 검증한 뒤, 무거운 학습만 GPU 가 달린
+컴퓨터에서 돌리는 방식이다. 결과를 화면에서 복사하지 않고 **저장소로 돌려보낸다** —
+로그를 긁으면 숫자가 잘리거나 섞이는데, JSON 을 그대로 받으면 그럴 일이 없다.
+
+```powershell
+.\scripts\gpu_run.ps1 s03_train_surrogate.py --case case118
+```
+
+`git pull` → 실험 → `results/` 만 커밋 → `git push` 를 한 번에 한다.
+체크포인트(`*.pt`)는 용량 때문에 `.gitignore` 에 있으므로 로컬에만 남고,
+지표가 담긴 `*.json` 만 돌아온다.
+
+### GPU 설치 (선택)
 
 NVIDIA GPU 가 있으면 4단계 학습이 수십 배 빨라집니다. **계산 능력(compute
 capability)에 맞는 PyTorch 빌드**를 깔아야 합니다.
