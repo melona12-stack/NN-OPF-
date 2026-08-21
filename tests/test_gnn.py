@@ -161,3 +161,38 @@ def test_linear_skip_starts_at_zero(ds):
     _, model = prepare(ds, _spec(residual=True), case=CASE)
     assert torch.count_nonzero(model.skip.weight) == 0
     assert torch.count_nonzero(model.skip.bias) == 0
+
+
+# --------------------------------------------------------------------------
+# 층 수를 정하는 값 — 계통 그래프의 지름 (06 문서 §7.7)
+# --------------------------------------------------------------------------
+
+@pytest.mark.parametrize("name,normal,worst_n1", [("case30", 6, 8),
+                                                  ("case118", 14, 18)])
+def test_graph_diameter_sets_the_layer_count(name, normal, worst_n1):
+    """지름은 GAT 층 수의 하한이다. 바뀌면 모델 형태도 바뀌어야 한다.
+
+    L 층 메시지 전달 신경망은 L-hop 까지만 본다. 조류방정식은
+    :math:`Y_{bus}^{-1}` 로 계통 전체가 결합하므로, 층 수가 지름보다 작으면
+    모델은 **물리적으로 볼 수 없는 것**을 예측해야 한다 (06 문서 §7.7).
+
+    선로가 끊기면 우회 경로가 길어져 지름이 늘어난다. 미지 N-1 분할에서
+    필요한 층 수는 정상 지름이 아니라 **N-1 최악 지름**이다.
+
+    이 숫자가 바뀌면 케이스 로더나 선로 목록이 변했다는 뜻이고, 그때는
+    ``--layers`` 기본값을 다시 정해야 한다.
+    """
+    import sys as _s
+    from pathlib import Path
+    _s.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    from s07_graph_diameter import _adjacency, diameter
+    from nnopf.case import load_case
+
+    ps = load_case(name)
+    assert diameter(_adjacency(ps.f_bus, ps.t_bus))[0] == normal
+
+    worst = max(
+        d for k in range(len(ps.f_bus))
+        if (d := diameter(_adjacency(ps.f_bus, ps.t_bus, drop=k))[0]) != float("inf")
+    )
+    assert worst == worst_n1

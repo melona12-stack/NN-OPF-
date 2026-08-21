@@ -87,7 +87,8 @@ scripts/                            번호가 곧 실행 순서
 ├── s03b_topology_breakdown.py      오차를 토폴로지로 분해
 ├── s04_plot.py                     결과를 그림으로 (figures/)
 ├── s05_device_benchmark.py         장치·배치별 학습 속도 측정
-└── s06_data_fingerprint.py         두 컴퓨터의 데이터 동일성 확인
+├── s06_data_fingerprint.py         두 컴퓨터의 데이터 동일성 확인
+└── s07_graph_diameter.py           계통 지름 = GAT 층 수의 하한
 
 tests/
 ├── test_nnopf.py      1~2단계 회귀 테스트 22개
@@ -132,7 +133,7 @@ python3 -m venv .venv
 # 정합성 검증 실행
 .venv/bin/python scripts/s01_validate_vs_pandapower.py
 
-# 테스트 79개 (회귀 71 + GAT 8)
+# 테스트 81개 (회귀 71 + GAT 10)
 .venv/bin/python -m pytest tests/ -q
 ```
 
