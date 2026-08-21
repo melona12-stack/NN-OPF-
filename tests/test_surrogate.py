@@ -405,3 +405,54 @@ def test_linear_baseline_follows_the_bundle_device(ds):
     lin = fit_linear(ds, b.layout, b.split["train"]).to(dev)
     m = evaluate(lin, b, b.split["test"][:128])
     assert np.isfinite(m["vm_mae"]) and np.isfinite(m["p_mismatch"])
+
+
+def test_linear_baseline_is_conditioned_and_reproducible(ds, sysm):
+    """상수열을 빼지 않으면 선형 기준선이 컴퓨터마다 다른 답을 낸다.
+
+    입력에는 정보가 0 인 열이 많다 — 부하 없는 모선의 ``Pd``, 발전기 없는
+    모선의 ``p_gen``, 상정사고에서 제외된 선로의 ``status``. 그대로 두면
+    설계행렬 조건수가 1e58 까지 올라가고, ``lstsq`` 의 특이값 절단선이 numpy
+    기본값 근처에 걸려 LAPACK 구현에 따라 답이 튄다. 실제로 같은 데이터로
+    두 컴퓨터에서 P/부하 30.80% 와 22.99% 가 나왔다.
+    """
+    from nnopf.baselines import fit_linear
+
+    layout = IOLayout(sysm)
+    split = ds.split_random(seed=0)
+    X = layout.inputs(ds)[split["train"]].astype(np.float64)
+
+    const = np.flatnonzero(X.std(0) == 0)
+    assert len(const) > 0, "이 데이터엔 상수열이 있어야 이 테스트가 의미 있다"
+
+    lin = fit_linear(ds, layout, split["train"], split["val"])
+    assert len(lin.keep) == X.shape[1] - len(const)
+
+    keep = np.flatnonzero(X.std(0) > 0)
+    A = np.c_[X[:, keep], np.ones(len(X))]
+    sv = np.linalg.svd(A, compute_uv=False)
+    assert sv[0] / sv[-1] < 1e12, "상수열을 뺐는데도 조건수가 너무 크다"
+
+    # 두 번 풀면 같은 답 (닫힌 해의 최소 조건)
+    lin2 = fit_linear(ds, layout, split["train"], split["val"])
+    assert torch.equal(lin.W, lin2.W)
+
+
+def test_linear_baseline_truncation_is_chosen_on_validation(ds, sysm):
+    """절단선을 검증 분할로 고른다 — 신경망의 조기 종료와 같은 기준.
+
+    학습 분할만 보면 성분을 하나도 안 버리는 쪽이 항상 이긴다(정의상 잔차
+    최소). 그런데 그 방향이 물리 잔차를 크게 키울 수 있다. 검증으로 골라야
+    두 모델의 선택 기준이 같아지고 비교가 공정해진다.
+    """
+    from nnopf.baselines import fit_linear
+
+    layout = IOLayout(sysm)
+    split = ds.split_random(seed=0)
+    picked = fit_linear(ds, layout, split["train"], split["val"])
+    plain = fit_linear(ds, layout, split["train"])          # 기본값 (고르지 않음)
+    assert picked.W.shape == plain.W.shape
+
+    b, _ = prepare(ds, _spec(), split=split, case=CASE)
+    for m in (evaluate(picked, b, split["test"]), evaluate(plain, b, split["test"])):
+        assert np.isfinite(m["p_over_load_pct"])

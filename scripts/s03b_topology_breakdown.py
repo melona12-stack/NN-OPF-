@@ -81,7 +81,7 @@ def main() -> int:
     model.eval()
 
     te = split["test"]
-    lin = fit_linear(ds, IOLayout(load_case(a.case)), split["train"])
+    lin = fit_linear(ds, IOLayout(load_case(a.case)), split["train"], split["val"])
     mlp_pct, lin_pct = residual_pct(model, b, te), residual_pct(lin, b, te)
     n1 = b.outage[torch.as_tensor(te, dtype=torch.long)].numpy() >= 0
 
