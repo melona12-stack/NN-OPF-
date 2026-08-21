@@ -112,32 +112,56 @@
       "problemMatcher": []
     },
     {
-      "label": "17. 측정 — 속도 CPU vs GPU (case30)",
+      "label": "17. M4 · GAT — case30 (30,000 표본)",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s03_train_surrogate.py --case case30 --model gat -n 30000 --epochs 1500 --tag _final",
+      "problemMatcher": []
+    },
+    {
+      "label": "18. M4 · GAT — case118 (60,000 표본, 목표 0.61%)",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s03_train_surrogate.py --case case118 --model gat -n 60000 --epochs 1500 --tag _final",
+      "problemMatcher": []
+    },
+    {
+      "label": "19. M4 · GAT 절제 — 게이팅 끄고 (case118)",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s03_train_surrogate.py --case case118 --model gat -n 60000 --epochs 1500 --no-gate --tag _nogate",
+      "problemMatcher": []
+    },
+    {
+      "label": "20. M4 · GAT — case118 미지 N-1 (목표 2.62%)",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s03_train_surrogate.py --case case118 --model gat -n 60000 --epochs 1500 --split unseen-n1 --tag _final_un1",
+      "problemMatcher": []
+    },
+    {
+      "label": "21. 측정 — 속도 CPU vs GPU (case30)",
       "type": "shell",
       "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s05_device_benchmark.py --case case30",
       "problemMatcher": []
     },
     {
-      "label": "18. 측정 — 속도 CPU vs GPU (case118)",
+      "label": "22. 측정 — 속도 CPU vs GPU (case118)",
       "type": "shell",
       "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s05_device_benchmark.py --case case118 --epochs 3",
       "problemMatcher": []
     },
     {
-      "label": "19. 검사 — 회귀 테스트 전체 (30분)",
+      "label": "23. 검사 — 회귀 테스트 전체 (30분)",
       "type": "shell",
       "command": "${workspaceFolder}/.venv/Scripts/python.exe -m pytest tests/ -q",
       "problemMatcher": [],
       "group": "test"
     },
     {
-      "label": "20. 업로드 — 결과를 GitHub 로",
+      "label": "24. 업로드 — 결과를 GitHub 로",
       "type": "shell",
       "command": "powershell -ExecutionPolicy Bypass -File ${workspaceFolder}/scripts/gpu_run.ps1 s03_train_surrogate.py --case case118 --epochs 1200 --tag _gpu",
       "problemMatcher": []
     },
     {
-      "label": "21. 확인 — 데이터가 내 것과 같은가 (지문 찍기)",
+      "label": "25. 확인 — 데이터가 내 것과 같은가 (지문 찍기)",
       "type": "shell",
       "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s06_data_fingerprint.py",
       "problemMatcher": []

@@ -256,7 +256,8 @@ def main() -> int:
 
     t = setup(a.dark)
     stem = f"{a.case}{a.tag}"
-    js = ROOT / "results" / f"{stem}_mlp.json"
+    js = next((f for f in (ROOT / "results").glob(f"{stem}_*.json")
+               if f.stem.endswith(("_mlp", "_gat"))), ROOT / "results" / f"{stem}_mlp.json")
     if not js.exists():
         print(f"[중단] 결과 파일이 없습니다: {js.relative_to(ROOT)}")
         print("       먼저 scripts/s03_train_surrogate.py 를 돌리세요.")
@@ -270,7 +271,7 @@ def main() -> int:
     else:
         print("  (학습곡선 건너뜀 — 이 결과에는 history 가 없습니다)")
 
-    ck = ROOT / "results" / f"{stem}_mlp.pt"
+    ck = js.with_suffix(".pt")
     if not ck.exists():
         print(f"  (체크포인트 없음: {ck.name} — 나머지 그림은 건너뜁니다)")
     else:
@@ -283,7 +284,12 @@ def main() -> int:
         ds = PowerFlowDataset.load(str(npz))
 
         sp = payload["spec"]
-        spec = SurrogateSpec(**sp)
+        if payload.get("model") == "gat":
+            from nnopf.gnn import GATSpec
+
+            spec = GATSpec(**sp)
+        else:
+            spec = SurrogateSpec(**sp)
         split = (
             ds.split_unseen_n1(seed=0)
             if payload.get("split") == "unseen-n1"

@@ -217,8 +217,9 @@ def prepare(
         vm_lo = vm_tr.mean(0)                     # raw 모드: (평균, 표준편차)
         vm_hi = np.maximum(vm_tr.std(0), 1e-6)
 
-    model = PowerFlowMLP(
-        layout, spec,
+    # 헤드·정규화 통계는 두 모델이 **똑같이** 쓴다. 여기가 갈리면 비교가
+    # 무너지므로 한 곳에서 만들어 넘긴다.
+    head_kw = dict(
         in_mean=in_mean, in_std=in_std,
         v_set=ds.v_set,
         vm_lo=vm_lo, vm_hi=vm_hi,
@@ -226,6 +227,16 @@ def prepare(
         vm_w=1.0 / np.maximum(vm_tr.std(0), 1e-6),
         va_w=1.0 / np.maximum(va_tr.std(0), 1e-6),
     )
+    if type(spec).__name__ == "GATSpec":
+        from nnopf.gnn import PowerFlowGAT
+
+        model = PowerFlowGAT(
+            layout, spec, sysm=sysm,
+            edge_index=ds.edge_index, edge_attr_base=ds.edge_attr_base,
+            edge_line=ds.edge_line, **head_kw,
+        )
+    else:
+        model = PowerFlowMLP(layout, spec, **head_kw)
 
     dev = torch.device(device)
     t = lambda a, d=torch.float32: torch.as_tensor(
@@ -418,8 +429,11 @@ def save_run(path: str | Path, payload: dict) -> None:
     p.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
-def spec_config_dict(spec: SurrogateSpec, cfg: TrainConfig) -> dict:
-    return {"spec": asdict(spec), "train": asdict(cfg)}
+def spec_config_dict(spec, cfg: TrainConfig) -> dict:
+    """결과 JSON 에 넣을 설정. 어떤 모델이었는지도 같이 남긴다 — 나중에
+    비교표를 만들 때 파일 이름만으로는 부족하다."""
+    kind = "gat" if type(spec).__name__ == "GATSpec" else "mlp"
+    return {"model": kind, "spec": asdict(spec), "train": asdict(cfg)}
 
 
 # --------------------------------------------------------------------------

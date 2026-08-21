@@ -33,6 +33,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from nnopf.baselines import fit_linear  # noqa: E402
 from nnopf.dataset import PowerFlowDataset, generate_dataset  # noqa: E402
+from nnopf.gnn import GATSpec  # noqa: E402
 from nnopf.models import SurrogateSpec  # noqa: E402
 from nnopf.train import (  # noqa: E402
     TrainConfig,
@@ -104,6 +105,11 @@ def main() -> int:
     p.add_argument("--device", default="auto", choices=["auto", "cpu", "cuda"],
                    help="auto 는 쓸 수 있으면 GPU. 잔차 측정은 항상 CPU float64")
 
+    p.add_argument("--model", default="mlp", choices=["mlp", "gat"],
+                   help="gat = 그래프 어텐션 (M4). 입출력 계약은 같다")
+    p.add_argument("--heads", type=int, default=4, help="gat 전용")
+    p.add_argument("--no-gate", action="store_true",
+                   help="gat 전용 절제 실험: 끊긴 선로의 어텐션을 막지 않는다")
     p.add_argument("--hidden", type=int, default=None)
     p.add_argument("--layers", type=int, default=None)
     p.add_argument("--activation", default="silu")
@@ -129,13 +135,25 @@ def main() -> int:
     DEVICE = resolve_device(a.device)
     pre = PRESET.get(a.case, PRESET["case30"])
     n = a.n or pre["n"]
-    spec = SurrogateSpec(
-        hidden=a.hidden or pre["hidden"],
-        layers=a.layers or pre["layers"],
-        activation=a.activation,
-        vm_head=a.vm_head,
-        residual=not a.no_residual,
-    )
+    if a.model == "gat":
+        # GAT 는 노드마다 같은 가중치를 쓰므로 폭이 덜 필요하다. MLP 와 같은
+        # 256 을 주면 파라미터가 훨씬 커져 공정한 비교가 아니게 된다.
+        spec = GATSpec(
+            hidden=a.hidden or 128,
+            layers=a.layers or pre["layers"],
+            heads=a.heads,
+            vm_head=a.vm_head,
+            residual=not a.no_residual,
+            gate=not a.no_gate,
+        )
+    else:
+        spec = SurrogateSpec(
+            hidden=a.hidden or pre["hidden"],
+            layers=a.layers or pre["layers"],
+            activation=a.activation,
+            vm_head=a.vm_head,
+            residual=not a.no_residual,
+        )
     base_cfg = dict(
         epochs=a.epochs or pre["epochs"], batch=a.batch, lr=a.lr or pre["lr"],
         lam_warmup=pre["lam_warmup"], lam_ramp=pre["lam_ramp"], seed=a.train_seed,
@@ -149,7 +167,9 @@ def main() -> int:
           f"val {len(split_full['val']):,} / test {len(split_full['test']):,})")
     dev_name = (torch.cuda.get_device_name(0) if DEVICE.type == "cuda"
                 else f"CPU ({a.threads} 스레드)")
-    print(f"모델: hidden {spec.hidden} x {spec.layers}층 · {spec.activation} · "
+    kind = ("GAT · 헤드 %d · 게이팅 %s" % (spec.heads, "켬" if spec.gate else "끔")
+            if a.model == "gat" else "MLP · %s" % spec.activation)
+    print(f"모델: {kind} · hidden {spec.hidden} x {spec.layers}층 · "
           f"vm_head={spec.vm_head} · 선형지름길 {'있음' if spec.residual else '없음'}")
     print(f"장치: {dev_name}"
           + ("  (잔차 측정은 CPU float64)" if DEVICE.type == "cuda" else "") + "\n")
@@ -212,14 +232,14 @@ def main() -> int:
                         # 실험이 끝난 뒤 "그때 손실이 어땠지" 를 다시 물을 수 없다.
                         "history": r["history"]})
         if not a.no_save:
-            ck = ROOT / "results" / f"{a.case}{a.tag}_mlp.pt"
+            ck = ROOT / "results" / f"{a.case}{a.tag}_{a.model}.pt"
             ck.parent.mkdir(parents=True, exist_ok=True)
             torch.save({"state_dict": model.state_dict(),
                         "spec": spec, "case": a.case}, ck)
             print(f"\n체크포인트: {ck.relative_to(ROOT)}")
 
     if not a.no_save:
-        out = ROOT / "results" / f"{a.case}{a.tag}_mlp.json"
+        out = ROOT / "results" / f"{a.case}{a.tag}_{a.model}.json"
         save_run(out, {
             "case": a.case, "n_samples": int(ds.n_samples), "data_seed": a.seed,
             "split": a.split, **spec_config_dict(spec, TrainConfig(**base_cfg)),
