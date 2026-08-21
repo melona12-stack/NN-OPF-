@@ -69,6 +69,7 @@ class GATSpec:
     residual: bool = True        # 선형 지름길
     gate: bool = True            # 끊긴 선로의 어텐션을 막는다 (③)
     edge_dim: int = 7            # r, x, sh, tap, status, g, b
+    node_id: int = 16            # 모선별 학습 임베딩 차원 (0 이면 끔)
 
 
 class EdgeGAT(nn.Module):
@@ -212,14 +213,24 @@ class PowerFlowGAT(nn.Module):
         buf("static_node", static)
 
         dim = spec.hidden
-        self.enc = nn.Sequential(nn.Linear(8, dim), nn.SiLU(), nn.Linear(dim, dim))
+        # 모선마다 학습되는 고유 벡터. GNN 은 정의상 노드를 구분하지 않는데
+        # (어느 계통에도 쓰려고), 우리는 **고정된 하나의 계통**을 다룬다.
+        # 모선 5 와 27 은 물리적으로 다른 자리이므로 그걸 알려 줘야 한다.
+        self.node_id = (
+            nn.Parameter(torch.randn(self.nb, spec.node_id) * 0.02)
+            if spec.node_id > 0 else None
+        )
+        n_in = 8 + (spec.node_id if spec.node_id > 0 else 0)
+        self.enc = nn.Sequential(nn.Linear(n_in, dim), nn.SiLU(), nn.Linear(dim, dim))
         self.blocks = nn.ModuleList(
             EdgeGAT(dim, spec.edge_dim, spec.heads, spec.gate)
             for _ in range(spec.layers)
         )
         self.drop = nn.Dropout(spec.dropout) if spec.dropout > 0 else nn.Identity()
-        self.head_vm = nn.Linear(dim, 1)
-        self.head_va = nn.Linear(dim, 1)
+        # 출력도 모선별 가중치. 공유 헤드는 "모든 모선이 같은 함수" 를
+        # 강제하는데, 전압은 모선마다 다른 사상이다.
+        self.head_w = nn.Parameter(torch.randn(self.nb, dim, 2) * (dim ** -0.5))
+        self.head_b = nn.Parameter(torch.zeros(self.nb, 2))
 
         # ④ 선형 지름길 — MLP 와 같은 이유로 남긴다 (06 문서 §6)
         self.skip = None
@@ -234,6 +245,8 @@ class PowerFlowGAT(nn.Module):
         B, nb = x.shape[0], self.nb
         phys = x[:, : 4 * nb].view(B, 4, nb).transpose(1, 2)        # (B, nb, 4)
         node = torch.cat([phys, self.static_node.expand(B, nb, 4)], -1)
+        if self.node_id is not None:
+            node = torch.cat([node, self.node_id.expand(B, nb, -1)], -1)
 
         status = x[:, 4 * nb :]                                     # (B, nl)
         ones = torch.ones(B, self.nb, device=x.device, dtype=x.dtype)
@@ -259,8 +272,9 @@ class PowerFlowGAT(nn.Module):
         for blk in self.blocks:
             h = self.drop(blk(h, self.edge_index, ea, alive))
 
-        vm_raw = self.head_vm(h).squeeze(-1)[:, self.pq_idx]
-        va_raw = self.head_va(h).squeeze(-1)[:, self.va_idx]
+        out = torch.einsum("bnd,ndk->bnk", h, self.head_w) + self.head_b
+        vm_raw = out[:, self.pq_idx, 0]
+        va_raw = out[:, self.va_idx, 1]
         if self.skip is not None:
             add = self.skip(z)
             vm_raw = vm_raw + add[:, : self.n_vm]

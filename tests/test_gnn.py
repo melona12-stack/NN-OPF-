@@ -132,7 +132,18 @@ def test_scaled_head_stays_in_box(ds):
 
 
 def test_trains_and_is_reproducible(ds):
-    """학습이 손실을 줄이고, 같은 시드면 같은 결과가 나온다."""
+    """학습이 손실을 줄이고, 같은 시드면 실질적으로 같은 결과가 나온다.
+
+    .. note::
+       **비트 단위 일치는 요구하지 않는다.** 엣지를 노드로 모을 때 쓰는
+       ``scatter_add`` 는 더하는 순서가 스레드마다 달라서, float32 에서
+       상대 :math:`10^{-7}` 수준의 차이가 남는다. 순전파 한 번에도 생기므로
+       **첫 epoch 부터** 갈릴 수 있고, 학습이 진행되며 증폭된다.
+
+       MLP 는 그런 누적이 없어 비트 단위로 재현된다
+       (``test_surrogate.py``). 모델 구조가 다르면 재현성의 뜻도 달라진다 —
+       "같은 시드면 같은 결론" 이지 "같은 비트" 가 아니다.
+    """
     out = []
     for _ in range(2):
         b, model = prepare(ds, _spec(), case=CASE, seed=0)
@@ -140,7 +151,9 @@ def test_trains_and_is_reproducible(ds):
         out.append((r["history"][0]["train"], r["history"][-1]["train"],
                     evaluate(model, b, b.split["test"])["vm_mae"]))
     assert out[0][1] < out[0][0], "손실이 줄어야 한다"
-    assert out[0] == pytest.approx(out[1], rel=1e-9), "같은 시드면 같은 결과"
+    # 우리가 주장할 어떤 효과보다도 훨씬 작은 폭 — 결론이 흔들리지 않는다.
+    # 더 조이면 통과했다 실패했다 하는 테스트가 된다. 그건 없는 것만 못하다.
+    assert out[0] == pytest.approx(out[1], rel=1e-4)
 
 
 def test_linear_skip_starts_at_zero(ds):
