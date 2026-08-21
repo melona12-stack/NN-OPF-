@@ -80,16 +80,43 @@ if ($commitOnly) {
 
 # --- 3) 결과만 커밋 ------------------------------------------------------
 Write-Host "`n[$($nStep - 1)/$nStep] 결과 커밋 중..." -ForegroundColor Cyan
+
+# 커밋하려면 git 이 "누가 만든 것인지" 를 알아야 한다. 이게 없으면 commit 이
+# 조용히 실패하고, 푸시는 "Everything up-to-date" 를 찍고 끝난다 - 성공한 것처럼
+# 보이지만 아무것도 안 올라간다. 먼저 확인한다.
+$who = (git config user.email)
+if (-not $who) {
+    Write-Host "[중단] 이 컴퓨터에 git 사용자 정보가 없어 커밋할 수 없습니다." -ForegroundColor Red
+    Write-Host "       아래 두 줄을 터미널에 한 번만 붙여 넣으세요 (자기 것으로 바꿔서):"
+    Write-Host '         git config --global user.name  "이름"' -ForegroundColor Yellow
+    Write-Host '         git config --global user.email "메일주소"' -ForegroundColor Yellow
+    Write-Host "       그 다음 이 작업을 다시 돌리면 됩니다."
+    exit 1
+}
+
 git add results
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "[중단] git add 실패." -ForegroundColor Red
+    exit 1
+}
+
 $staged = git diff --cached --name-only
 if (-not $staged) {
-    Write-Host "      새로 생긴 결과 파일이 없습니다. 푸시를 건너뜁니다." -ForegroundColor Yellow
+    Write-Host "      커밋할 결과 파일이 없습니다." -ForegroundColor Yellow
+    Write-Host "      results\ 폴더의 지금 상태는 이렇습니다:"
+    git status --short results
+    Write-Host "      (아무것도 안 나오면 이미 다 올라가 있다는 뜻입니다.)"
     exit 0
 }
 $staged | ForEach-Object { Write-Host "      + $_" }
+
 $stamp = Get-Date -Format "yyyy-MM-dd HH:mm"
 $what = if ($commitOnly) { "작업 목록에서 직접 실행" } else { "$script $rest ($mins 분)" }
 git commit -q -m "GPU 실험 결과: $what ($stamp)"
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "[중단] git commit 실패. 위 메시지를 그대로 알려 주세요." -ForegroundColor Red
+    exit 1
+}
 
 # --- 4) 푸시 -------------------------------------------------------------
 Write-Host "`n[$nStep/$nStep] 푸시 중..." -ForegroundColor Cyan
@@ -106,4 +133,6 @@ for ($i = 1; $i -le 4; $i++) {
     Start-Sleep -Seconds $wait
 }
 
-Write-Host "`n끝났습니다. 클로드에게 '결과 올렸어' 라고 알려 주세요.`n" -ForegroundColor Green
+$head = git rev-parse --short HEAD
+Write-Host "`n끝났습니다. 올라간 커밋: $head" -ForegroundColor Green
+Write-Host "클로드에게 '결과 올렸어' 라고 알려 주세요.`n" -ForegroundColor Green
