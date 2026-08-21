@@ -83,6 +83,18 @@
       "problemMatcher": []
     },
     {
+      "label": "A. 속도 측정 — CPU vs GPU, 배치별 (case30)",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s05_device_benchmark.py --case case30",
+      "problemMatcher": []
+    },
+    {
+      "label": "B. 속도 측정 — CPU vs GPU, 배치별 (case118)",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s05_device_benchmark.py --case case118 --epochs 3",
+      "problemMatcher": []
+    },
+    {
       "label": "9. 회귀 테스트 66개 (30분)",
       "type": "shell",
       "command": "${workspaceFolder}/.venv/Scripts/python.exe -m pytest tests/ -q",
