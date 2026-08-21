@@ -15,6 +15,13 @@
   "presentation": { "reveal": "always", "panel": "dedicated", "clear": true },
   "tasks": [
     {
+      "label": "최신 코드 받기 (git pull)",
+      "type": "shell",
+      "command": "git pull",
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "shared" }
+    },
+    {
       "label": "0. 환경 점검 (GPU 포함)",
       "type": "shell",
       "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s00_check_env.py",
