@@ -72,12 +72,16 @@ src/nnopf/
 ├── physics_torch.py  조류방정식 잔차의 PyTorch 판 (물리손실용)
 ├── models.py      MLP 대체모델 (스케일링 인자 헤드 + 선형 지름길)
 ├── train.py       학습 루프 · 평가 지표 · λ 스케줄
-└── baselines.py   선형 최소제곱 비교군
+├── baselines.py   선형 최소제곱 비교군
+└── viz.py         그림 팔레트·스타일 (색각이상 검증 통과)
 
 scripts/
 ├── s01_validate_vs_pandapower.py   2단계 정합성 검증
 ├── s02_generate_dataset.py         3단계 데이터 생성
-└── s03_train_surrogate.py          4단계 대체모델 학습
+├── s03_train_surrogate.py          4단계 대체모델 학습
+├── s03b_topology_breakdown.py      오차를 토폴로지로 분해
+├── s04_plot.py                     결과를 그림으로 (figures/)
+└── s00_check_env.py                환경 점검 (GPU 실연산까지)
 
 tests/
 ├── test_nnopf.py      1~2단계 회귀 테스트 22개

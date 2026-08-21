@@ -15,3 +15,6 @@ results/*.ckpt
 
 # Notion 변환 산출물 (tools/md_to_notion.py 로 재생성 가능)
 *.notion.md
+
+# 그림은 재생성 가능 — 커밋하지 않는다 (데이터와 같은 원칙)
+figures/

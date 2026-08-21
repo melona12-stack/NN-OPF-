@@ -192,7 +192,10 @@ def main() -> int:
         print("-" * len(HEAD))
         print(fmt_row(f"λ={lam:g}", m, time.time() - t, f"ep{r['epochs_run']}"))
         results.append({"lam": lam, "metrics": m,
-                        "best_epoch": r["best_epoch"], "seconds": r["seconds"]})
+                        "best_epoch": r["best_epoch"], "seconds": r["seconds"],
+                        # 학습곡선을 나중에 그리려면 이게 있어야 한다.
+                        # 실험이 끝난 뒤 "그때 손실이 어땠지" 를 다시 물을 수 없다.
+                        "history": r["history"]})
         if not a.no_save:
             ck = ROOT / "results" / f"{a.case}{a.tag}_mlp.pt"
             ck.parent.mkdir(parents=True, exist_ok=True)
