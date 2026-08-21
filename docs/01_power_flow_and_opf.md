@@ -353,7 +353,8 @@ $S = V\overline{Y_{bus}V}$ 에 그냥 대입하면 끝입니다. 반복도 필�
 
 이유가 두 가지입니다.
 
-**첫째, 위상의 기준점이 필요합니다** (§2.3에서 본 것). 누군가는 0도여야 합니다.
+**첫째, 위상의 기준점이 필요합니다** (§2.3에서 본 것). 누군가는 고정된 기준값이어야
+합니다 — §2.3의 경고대로 **그 값이 0이라는 보장은 없습니다.**
 
 **둘째, 손실을 미리 알 수 없습니다.**
 
@@ -500,7 +501,7 @@ $$
 & V^{min}_i \le |V|_i \le V^{max}_i && \forall i \\
 & P^{min}_g \le P_g \le P^{max}_g,\quad Q^{min}_g \le Q_g \le Q^{max}_g && \forall g \\
 & |S_f| \le S^{max},\quad |S_t| \le S^{max} && \\
-& \theta_{slack} = 0
+& \theta_{slack} = \theta_{slack}^{\mathrm{ref}}
 \end{aligned}
 $$
 

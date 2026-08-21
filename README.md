@@ -11,12 +11,15 @@
 | 1 | OPF 기본 개념 학습 + 직접 구현 | ✅ 완료 |
 | 2 | pandapower 대조 정합성 검증 | ✅ 완료 — 기계정밀도 일치 |
 | 3 | NN 관련 스터디 + 학습 데이터 생성 | ✅ 완료 — 논문 4편 정독 ✅, 데이터 생성기 ✅ |
-| 4 | NN 으로 조류계산 대체(학습) | 🔄 진행 중 — **MLP 기준선 ✅**, GNN ⬜ |
+| 4 | NN 으로 조류계산 대체(학습) | 🔄 진행 중 — **MLP 기준선 ✅**, GAT 🔄 (첫 시도 실패) |
 | 5 | 대체모델을 포함한 OPF | ⬜ |
 
-**개발 환경**: 현재 CPU 4코어 / 15GB RAM.
-**RTX 5060**(Blackwell, 8GB GDDR7, sm_120) 도입 예정 —
-PyTorch는 반드시 `cu128` 이상 빌드 필요 ([근거](docs/00_overview.md#8-계산-자원--rtx-5060-도입)).
+**개발 환경**: **RTX 5060**(Blackwell, sm_120, 8GB) + CUDA 12.8 스택 도입 완료.
+학습은 GPU(float32), 최종 잔차 측정은 CPU(float64)로 나눠 돕니다 —
+소비자용 지포스는 배정밀도가 1/64 속도라서입니다
+([06 문서 §7.5](docs/06_surrogate_training.md)).
+PyTorch는 반드시 `cu128` 이상 빌드여야 합니다 — 그 이전 빌드는
+`torch.cuda.is_available()`이 `True`인데 실제 연산에서 터집니다.
 
 ### 1~2단계 검증 결과 요약
 
@@ -73,20 +76,24 @@ src/nnopf/
 ├── models.py      MLP 대체모델 (스케일링 인자 헤드 + 선형 지름길)
 ├── train.py       학습 루프 · 평가 지표 · λ 스케줄
 ├── baselines.py   선형 최소제곱 비교군
+├── gnn.py         그래프 어텐션 대체모델 (M4)
 └── viz.py         그림 팔레트·스타일 (색각이상 검증 통과)
 
-scripts/
+scripts/                            번호가 곧 실행 순서
+├── s00_check_env.py                환경 점검 (GPU 실연산까지)
 ├── s01_validate_vs_pandapower.py   2단계 정합성 검증
 ├── s02_generate_dataset.py         3단계 데이터 생성
-├── s03_train_surrogate.py          4단계 대체모델 학습
+├── s03_train_surrogate.py          4단계 대체모델 학습 (--model mlp|gat)
 ├── s03b_topology_breakdown.py      오차를 토폴로지로 분해
 ├── s04_plot.py                     결과를 그림으로 (figures/)
-└── s00_check_env.py                환경 점검 (GPU 실연산까지)
+├── s05_device_benchmark.py         장치·배치별 학습 속도 측정
+└── s06_data_fingerprint.py         두 컴퓨터의 데이터 동일성 확인
 
 tests/
 ├── test_nnopf.py      1~2단계 회귀 테스트 22개
 ├── test_dataset.py    3단계 회귀 테스트 22개
-└── test_surrogate.py  4단계 회귀 테스트 22개
+├── test_surrogate.py  4단계 회귀 테스트 27개
+└── test_gnn.py        M4 그래프 어텐션 테스트 8개
 ```
 
 ### 학습 데이터 (3단계)
@@ -125,7 +132,7 @@ python3 -m venv .venv
 # 정합성 검증 실행
 .venv/bin/python scripts/s01_validate_vs_pandapower.py
 
-# 회귀 테스트 (66개)
+# 테스트 79개 (회귀 71 + GAT 8)
 .venv/bin/python -m pytest tests/ -q
 ```
 
@@ -182,7 +189,9 @@ python scripts/s00_check_env.py
 
 ### GPU 설치 (선택)
 
-NVIDIA GPU 가 있으면 4단계 학습이 수십 배 빨라집니다. **계산 능력(compute
+NVIDIA GPU 는 **배치가 클 때만** 크게 빠릅니다 — case118 배치 4,096 에서 20~26배.
+배치 64 처럼 작으면 오히려 CPU 가 빠릅니다 ([06 문서](docs/06_surrogate_training.md) §8.1).
+**계산 능력(compute
 capability)에 맞는 PyTorch 빌드**를 깔아야 합니다.
 
 ```powershell
