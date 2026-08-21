@@ -1,124 +1,125 @@
 {
   // VS Code 에서 Ctrl+Shift+P → "Run Task" → 목록에서 고르면 실행된다.
-  // 명령을 외우거나 타이핑할 필요가 없다.
-  //
-  // 번호가 곧 순서다. 그림은 그 학습을 먼저 돌려야 나온다 —
-  // 체크포인트(*.pt)는 용량 때문에 저장소에 없어서, 남의 컴퓨터에서 만든
-  // 그림은 그릴 수 없다.
+  // 번호 순서대로 내려가면 된다. 괄호 안에 "n번 먼저" 라고 적힌 것은
+  // 그 학습을 돌려야 결과 파일이 생겨서 그림을 그릴 수 있다는 뜻이다.
+
   "version": "2.0.0",
-  "presentation": { "reveal": "always", "panel": "dedicated", "clear": true },
+  "presentation": {
+    "reveal": "always",
+    "panel": "dedicated",
+    "clear": true
+  },
   "tasks": [
     {
-      "label": "00 · 최신 코드 받기 (git pull)",
+      "label": " 1. 준비 — 최신 코드 받기 (git pull)",
       "type": "shell",
       "command": "git pull",
       "problemMatcher": [],
-      "presentation": { "reveal": "always", "panel": "shared" }
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      }
     },
     {
-      "label": "01 · 환경 점검 (GPU 실연산까지)",
+      "label": " 2. 준비 — 환경 점검 (GPU 실연산까지)",
       "type": "shell",
       "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s00_check_env.py",
       "problemMatcher": [],
       "group": "test"
     },
-
     {
-      "label": "10 · 학습 — case30 빠르게 (300 epoch)",
+      "label": " 3. 학습 — case30 빠르게 (300 epoch)",
       "type": "shell",
       "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s03_train_surrogate.py --case case30 --epochs 300",
       "problemMatcher": []
     },
     {
-      "label": "11 · 학습 — case30 미지 N-1 (일반화 시험)",
+      "label": " 4. 학습 — case30 미지 N-1 (일반화 시험)",
       "type": "shell",
       "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s03_train_surrogate.py --case case30 --split unseen-n1 --tag _un1",
       "problemMatcher": []
     },
     {
-      "label": "12 · 학습 — case118 (오래 걸림)",
+      "label": " 5. 학습 — case118 (오래 걸림)",
       "type": "shell",
       "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s03_train_surrogate.py --case case118 --epochs 1200 --tag _gpu",
       "problemMatcher": []
     },
     {
-      "label": "13 · 학습 — case118 미지 N-1",
+      "label": " 6. 학습 — case118 미지 N-1",
       "type": "shell",
       "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s03_train_surrogate.py --case case118 --epochs 1200 --split unseen-n1 --tag _gpu_un1",
       "problemMatcher": []
     },
-
     {
-      "label": "20 · 그림 — case30 (10 먼저)",
+      "label": " 7. 그림 — case30 (3번 먼저)",
       "type": "shell",
       "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s04_plot.py --case case30",
       "problemMatcher": []
     },
     {
-      "label": "21 · 그림 — case30 미지 N-1 (11 먼저)",
+      "label": " 8. 그림 — case30 미지 N-1 (4번 먼저)",
       "type": "shell",
       "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s04_plot.py --case case30 --tag _un1",
       "problemMatcher": []
     },
     {
-      "label": "22 · 그림 — case118 (12 먼저)",
+      "label": " 9. 그림 — case118 (5번 먼저)",
       "type": "shell",
       "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s04_plot.py --case case118 --tag _gpu",
       "problemMatcher": []
     },
     {
-      "label": "23 · 토폴로지 분해 — 오차가 어디에 몰렸나 (11 먼저)",
+      "label": "10. 분석 — 토폴로지 분해 (4번 먼저)",
       "type": "shell",
       "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s03b_topology_breakdown.py --case case30 --tag _un1",
       "problemMatcher": []
     },
-
     {
-      "label": "30 · 데이터 확대 — case30 30,000 표본 (1분)",
+      "label": "11. 데이터 — case30 30,000 표본 만들기 (1분)",
       "type": "shell",
       "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s03_train_surrogate.py --case case30 -n 30000 --epochs 1 --no-save",
       "problemMatcher": []
     },
     {
-      "label": "31 · 데이터 확대 — case118 60,000 표본 (3분)",
+      "label": "12. 데이터 — case118 60,000 표본 만들기 (3분)",
       "type": "shell",
       "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s03_train_surrogate.py --case case118 -n 60000 --epochs 1 --no-save",
       "problemMatcher": []
     },
     {
-      "label": "32 · 학습곡선 — case30 어디서 포화하나 (30 먼저)",
+      "label": "13. 실험 — case30 학습곡선 (11번 먼저)",
       "type": "shell",
       "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s03_train_surrogate.py --case case30 -n 30000 --epochs 600 --curve 2000 4000 8000 16000 21000 --tag _curve30k",
       "problemMatcher": []
     },
     {
-      "label": "33 · 학습곡선 — case118 어디서 포화하나 (31 먼저)",
+      "label": "14. 실험 — case118 학습곡선 (12번 먼저)",
       "type": "shell",
       "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s03_train_surrogate.py --case case118 -n 60000 --epochs 600 --curve 7000 14000 28000 42000 --tag _curve60k",
       "problemMatcher": []
     },
-
     {
-      "label": "40 · 속도 — CPU vs GPU 배치별 (case30)",
+      "label": "15. 측정 — 속도 CPU vs GPU (case30)",
       "type": "shell",
       "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s05_device_benchmark.py --case case30",
       "problemMatcher": []
     },
     {
-      "label": "41 · 속도 — CPU vs GPU 배치별 (case118)",
+      "label": "16. 측정 — 속도 CPU vs GPU (case118)",
       "type": "shell",
       "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s05_device_benchmark.py --case case118 --epochs 3",
       "problemMatcher": []
     },
     {
-      "label": "90 · 회귀 테스트 전체 (30분)",
+      "label": "17. 검사 — 회귀 테스트 전체 (30분)",
       "type": "shell",
       "command": "${workspaceFolder}/.venv/Scripts/python.exe -m pytest tests/ -q",
       "problemMatcher": [],
       "group": "test"
     },
     {
-      "label": "91 · 결과를 GitHub 로 (pull → 학습 → push)",
+      "label": "18. 업로드 — 결과를 GitHub 로",
       "type": "shell",
       "command": "powershell -ExecutionPolicy Bypass -File ${workspaceFolder}/scripts/gpu_run.ps1 s03_train_surrogate.py --case case118 --epochs 1200 --tag _gpu",
       "problemMatcher": []
