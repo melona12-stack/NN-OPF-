@@ -50,7 +50,10 @@ class TrainConfig:
     """
 
     epochs: int = 300
-    batch: int = 64
+    # 배치 256. GPU 에서 64 는 손해다 — 갱신 한 번 시간이 배치에 거의
+    # 무관해서(06 문서 §8.1), 작은 배치는 그 고정비만 여러 번 낸다.
+    # 그렇다고 4096 까지 올리면 epoch 당 갱신이 몇 번 안 남는다.
+    batch: int = 256
     lr: float = 2e-3
     weight_decay: float = 1e-5
     grad_clip: float = 2.0

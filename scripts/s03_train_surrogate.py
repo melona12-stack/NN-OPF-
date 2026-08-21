@@ -111,7 +111,8 @@ def main() -> int:
     p.add_argument("--no-residual", action="store_true",
                    help="선형 지름길 끄기 (순수 MLP 비교용)")
     p.add_argument("--epochs", type=int, default=None)
-    p.add_argument("--batch", type=int, default=64)
+    p.add_argument("--batch", type=int, default=256,
+                   help="GPU 에서 64 는 손해다 (06 문서 §8.1)")
     p.add_argument("--lr", type=float, default=None)
     p.add_argument("--lam", type=float, default=None, help="물리손실 가중치 (0 = 순수 지도학습)")
 
