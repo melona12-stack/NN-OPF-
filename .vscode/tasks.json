@@ -123,6 +123,12 @@
       "type": "shell",
       "command": "powershell -ExecutionPolicy Bypass -File ${workspaceFolder}/scripts/gpu_run.ps1 s03_train_surrogate.py --case case118 --epochs 1200 --tag _gpu",
       "problemMatcher": []
+    },
+    {
+      "label": "19. 확인 — 데이터가 내 것과 같은가 (지문 찍기)",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s06_data_fingerprint.py",
+      "problemMatcher": []
     }
   ]
 }
