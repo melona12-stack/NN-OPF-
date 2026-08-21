@@ -57,7 +57,11 @@ def setup(dark: bool = False) -> Theme:
     have = {f.name for f in fm.fontManager.ttflist}
     for cand in ("Malgun Gothic", "NanumGothic", "Noto Sans CJK KR", "AppleGothic"):
         if cand in have:
-            plt.rcParams["font.family"] = cand
+            # 폰트를 **목록**으로 준다. 한글 폰트 대부분은 진짜 빼기 기호
+            # (U+2212) 를 갖고 있지 않은데, 로그 눈금의 지수(10⁻⁵)가 그걸 쓴다.
+            # axes.unicode_minus=False 는 일반 눈금만 덮고 수식 눈금은 못 덮는다.
+            # 뒤에 DejaVu Sans 를 붙여 두면 없는 글자만 거기서 가져온다.
+            plt.rcParams["font.family"] = [cand, "DejaVu Sans"]
             KO = True
             break
     else:

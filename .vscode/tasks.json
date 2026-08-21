@@ -1,6 +1,13 @@
 {
   // VS Code 에서 Ctrl+Shift+P → "Run Task" → 목록에서 고르면 실행된다.
   // 명령을 외우거나 타이핑할 필요가 없다.
+  //
+  // 짝이 정해져 있다 — 그림은 그 학습을 먼저 돌려야 나온다.
+  // 체크포인트(*.pt)는 용량 때문에 저장소에 없으니, 남의 컴퓨터에서 만든
+  // 그림은 그릴 수 없다.
+  //     1 번 학습 → 4 번 그림
+  //     2 번 학습 → 5 번 그림
+  //     3 번 학습 → 7 번 그림
   "version": "2.0.0",
   "options": {
     "env": { "PY": "${workspaceFolder}/.venv/Scripts/python.exe" }
@@ -39,9 +46,21 @@
       "problemMatcher": []
     },
     {
-      "label": "5. 그림 그리기 — case118 미지 N-1",
+      "label": "5. 그림 그리기 — case30 미지 N-1 (2번 먼저)",
       "type": "shell",
-      "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s04_plot.py --case case118 --tag _fix_un1",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s04_plot.py --case case30 --tag _un1",
+      "problemMatcher": []
+    },
+    {
+      "label": "7. 그림 그리기 — case118 (3번 먼저)",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s04_plot.py --case case118 --tag _gpu",
+      "problemMatcher": []
+    },
+    {
+      "label": "8. 토폴로지 분해 — 오차가 어디에 몰렸나 (2번 먼저)",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s03b_topology_breakdown.py --case case30 --tag _un1",
       "problemMatcher": []
     },
     {
