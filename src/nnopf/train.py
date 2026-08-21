@@ -32,6 +32,7 @@ from nnopf.models import IOLayout, PowerFlowMLP, SurrogateSpec
 from nnopf.physics_torch import ACPhysics
 
 __all__ = ["TrainConfig", "prepare", "train", "evaluate", "lambda_at",
+           "resolve_device",
            "supervised_loss", "input_stats"]
 
 
@@ -121,8 +122,9 @@ class Bundle:
     p_spec: torch.Tensor     # (N, nb)
     q_spec: torch.Tensor
     outage: torch.Tensor     # (N,)
-    physics: ACPhysics       # float32 (학습용)
-    physics64: ACPhysics     # float64 (평가용)
+    physics: ACPhysics       # float32 (학습용) — device 위
+    physics64: ACPhysics     # float64 (평가용) — 항상 CPU
+    device: torch.device = torch.device("cpu")
 
 
 def input_stats(X: np.ndarray, tr: np.ndarray, n_phys: int) -> tuple[np.ndarray, np.ndarray]:
@@ -150,17 +152,41 @@ def input_stats(X: np.ndarray, tr: np.ndarray, n_phys: int) -> tuple[np.ndarray,
     return mean.astype(np.float32), std.astype(np.float32)
 
 
+def resolve_device(spec: str = "auto") -> torch.device:
+    """``"auto" | "cpu" | "cuda"`` 를 실제 장치로.
+
+    ``auto`` 는 쓸 수 있으면 GPU 를 쓴다. ``is_available()`` 만 믿지 않고
+    실제 연산을 한 번 시켜 본다 — 빌드가 이 GPU 의 계산 능력을 지원하지
+    않으면 available 은 True 인데 첫 커널에서 터진다 (s00_check_env 참고).
+    """
+    if spec == "cpu" or not torch.cuda.is_available():
+        return torch.device("cpu")
+    try:
+        (torch.zeros(8, 8, device="cuda") @ torch.zeros(8, 8, device="cuda")).sum().item()
+        return torch.device("cuda")
+    except RuntimeError:
+        if spec == "cuda":
+            raise
+        return torch.device("cpu")
+
+
 def prepare(
     ds: PowerFlowDataset,
     spec: SurrogateSpec,
     split: dict[str, np.ndarray] | None = None,
     case: str | None = None,
     seed: int = 0,
+    device: torch.device | str = "cpu",
 ) -> tuple[Bundle, PowerFlowMLP]:
     """데이터셋에서 텐서 묶음과 (초기화된) 모델을 만든다.
 
     ``seed`` 는 **가중치 초기화**를 고정한다. 학습 시드(``TrainConfig.seed``)는
     배치 순서만 정하므로, 둘 다 고정해야 완전히 재현된다.
+
+    ``device`` 로 GPU 를 지정하면 입력·라벨·물리모듈·모델이 전부 그쪽으로
+    간다. 데이터셋이 통째로 VRAM 에 올라가는데, case118 · 20,000 표본이
+    60 MB 남짓이라 8 GB 로 충분하다. 매 배치 전송이 없어져서 이 규모에서는
+    이게 제일 빠르다.
     """
     torch.manual_seed(seed)
     sysm = load_case(case or ds.case)
@@ -198,9 +224,11 @@ def prepare(
         va_w=1.0 / np.maximum(va_tr.std(0), 1e-6),
     )
 
-    t = lambda a, d=torch.float32: torch.as_tensor(np.asarray(a), dtype=d)
+    dev = torch.device(device)
+    t = lambda a, d=torch.float32: torch.as_tensor(
+        np.asarray(a), dtype=d).to(dev)
     # 물리 손실 무차원화 기준: 학습 분할의 모선별 지정주입 RMS
-    ph32 = ACPhysics(sysm, torch.float32)
+    ph32 = ACPhysics(sysm, torch.float32).to(device=dev)
     ph32.set_scale(
         t(np.sqrt((p_spec[tr] ** 2).mean(0))), t(np.sqrt((q_spec[tr] ** 2).mean(0)))
     )
@@ -210,9 +238,12 @@ def prepare(
         p_spec=t(p_spec), q_spec=t(q_spec),
         outage=t(ds.outage, torch.long),
         physics=ph32,
+        # float64 는 CPU 에 둔다 — 소비자용 GPU 는 배정밀도가 1/64 속도라
+        # 여기서 재면 오히려 느려진다.
         physics64=ACPhysics(sysm, torch.float64),
+        device=dev,
     )
-    return bundle, model
+    return bundle, model.to(dev)
 
 
 # --------------------------------------------------------------------------
@@ -227,33 +258,35 @@ def evaluate(
     보고 항목은 P2 Table 6/7 과 맞췄다 — 전압 MAE, P/Q 불일치, 부하 대비 비율.
     """
     model.eval()
-    ii = torch.as_tensor(idx, dtype=torch.long)
-    ph = b.physics64
+    ii = torch.as_tensor(idx, dtype=torch.long, device=b.device)
+    ph = b.physics64          # 항상 CPU (배정밀도는 소비자용 GPU 에서 느리다)
 
-    dvm, dva, dP, dQ = [], [], [], []
+    dvm, dva, dP, dQ, vms = [], [], [], [], []
     for s in range(0, len(ii), chunk):
         j = ii[s : s + chunk]
         Vm, Va = model(b.X[j])
-        Vm64, Va64 = Vm.double(), Va.double()
-        dvm.append((Vm64 - b.Vm[j].double()).abs())
-        dva.append((Va64 - b.Va[j].double()).abs())
+        # 예측을 CPU float64 로 내린 뒤에 잰다. 전압 오차가 Ybus 를 거치며
+        # max|Y| 배로 증폭되므로 잔차는 반드시 배정밀도로 봐야 한다.
+        Vm64, Va64 = Vm.double().cpu(), Va.double().cpu()
+        vms.append(Vm64)
+        dvm.append((Vm64 - b.Vm[j].double().cpu()).abs())
+        dva.append((Va64 - b.Va[j].double().cpu()).abs())
         rp, rq = ph.residual(
-            Vm64, Va64, b.p_spec[j].double(), b.q_spec[j].double(), b.outage[j]
+            Vm64, Va64,
+            b.p_spec[j].double().cpu(), b.q_spec[j].double().cpu(),
+            b.outage[j].cpu(),
         )
         dP.append(rp.abs())
         dQ.append(rq.abs())
 
     dvm, dva = torch.cat(dvm), torch.cat(dva)
     dP, dQ = torch.cat(dP), torch.cat(dQ)
-    load = b.p_spec[ii].double().abs().sum(-1).mean().clamp(min=1e-9)
+    load = b.p_spec[ii].double().cpu().abs().sum(-1).mean().clamp(min=1e-9)
 
     # 전압 한계 위반 (계통 기준)
     Vmin = torch.as_tensor(b.sys.Vmin, dtype=torch.float64)
     Vmax = torch.as_tensor(b.sys.Vmax, dtype=torch.float64)
-    Vm_all = torch.cat(
-        [model(b.X[ii[s : s + chunk]])[0].double() for s in range(0, len(ii), chunk)]
-    )
-    viol = ((Vm_all < Vmin) | (Vm_all > Vmax)).double()
+    viol = ((torch.cat(vms) < Vmin) | (torch.cat(vms) > Vmax)).double()
 
     return {
         "n": int(len(idx)),
@@ -285,8 +318,8 @@ def train(
     torch.manual_seed(cfg.seed)
     np.random.seed(cfg.seed)
 
-    tr = torch.as_tensor(b.split["train"], dtype=torch.long)
-    va = torch.as_tensor(b.split["val"], dtype=torch.long)
+    tr = torch.as_tensor(b.split["train"], dtype=torch.long, device=b.device)
+    va = torch.as_tensor(b.split["val"], dtype=torch.long, device=b.device)
     # AdamW(분리형 감쇠). 일반 Adam 의 weight_decay 는 L2 를 기울기에 더하는
     # 방식이라 손실이 작을 때 과제 기울기를 눌러 버린다 (models.py 상단 주석).
     opt = torch.optim.AdamW(
@@ -320,7 +353,7 @@ def train(
             if verbose:
                 print(f"  [λ 환산] 물리/지도 = {phys_ref:.3e} (epoch {ep})")
         model.train()
-        perm = tr[torch.randperm(len(tr))]
+        perm = tr[torch.randperm(len(tr), device=b.device)]
         tot = n_seen = 0.0
 
         for s in range(0, len(perm), cfg.batch):

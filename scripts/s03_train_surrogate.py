@@ -38,6 +38,7 @@ from nnopf.train import (  # noqa: E402
     TrainConfig,
     evaluate,
     prepare,
+    resolve_device,
     save_run,
     spec_config_dict,
     train,
@@ -81,8 +82,11 @@ HEAD = (
 )
 
 
+DEVICE = "cpu"     # main() 이 --device 로 정한다
+
+
 def run_one(ds, spec: SurrogateSpec, cfg: TrainConfig, split=None, quiet=False):
-    b, model = prepare(ds, spec, split=split)
+    b, model = prepare(ds, spec, split=split, device=DEVICE)
     r = train(model, b, cfg, verbose=not quiet)
     m = evaluate(model, b, b.split["test"])
     return model, b, r, m
@@ -97,6 +101,8 @@ def main() -> int:
     p.add_argument("--train-seed", type=int, default=0, help="학습 시드")
     p.add_argument("--workers", type=int, default=4)
     p.add_argument("--threads", type=int, default=2, help="torch 스레드 (작은 배치라 2가 최적)")
+    p.add_argument("--device", default="auto", choices=["auto", "cpu", "cuda"],
+                   help="auto 는 쓸 수 있으면 GPU. 잔차 측정은 항상 CPU float64")
 
     p.add_argument("--hidden", type=int, default=None)
     p.add_argument("--layers", type=int, default=None)
@@ -117,7 +123,9 @@ def main() -> int:
     p.add_argument("--no-save", action="store_true")
     a = p.parse_args()
 
+    global DEVICE
     torch.set_num_threads(a.threads)
+    DEVICE = resolve_device(a.device)
     pre = PRESET.get(a.case, PRESET["case30"])
     n = a.n or pre["n"]
     spec = SurrogateSpec(
@@ -138,8 +146,12 @@ def main() -> int:
     print(f"\n{a.case}: 표본 {ds.n_samples:,} · 모선 {ds.n_bus} · "
           f"분할 {a.split} (train {len(split_full['train']):,} / "
           f"val {len(split_full['val']):,} / test {len(split_full['test']):,})")
+    dev_name = (torch.cuda.get_device_name(0) if DEVICE.type == "cuda"
+                else f"CPU ({a.threads} 스레드)")
     print(f"모델: hidden {spec.hidden} x {spec.layers}층 · {spec.activation} · "
-          f"vm_head={spec.vm_head} · 선형지름길 {'있음' if spec.residual else '없음'}\n")
+          f"vm_head={spec.vm_head} · 선형지름길 {'있음' if spec.residual else '없음'}")
+    print(f"장치: {dev_name}"
+          + ("  (잔차 측정은 CPU float64)" if DEVICE.type == "cuda" else "") + "\n")
 
     results: list[dict] = []
     print(HEAD)
@@ -147,7 +159,7 @@ def main() -> int:
 
     # 비교군: 최소제곱 선형 대체모델. 06 부록 §4.1 의 기준선이고 닫힌 형태라
     # 시드도 epoch 도 없다. 신경망은 이걸 넘어야 의미가 있다.
-    b0, _ = prepare(ds, spec, split=split_full)
+    b0, _ = prepare(ds, spec, split=split_full, device=DEVICE)
     t0 = time.time()
     lin = fit_linear(ds, b0.layout, split_full["train"])
     m_lin = evaluate(lin, b0, split_full["test"])

@@ -40,6 +40,12 @@
       "problemMatcher": []
     },
     {
+      "label": "3b. 학습 — case118 을 CPU 로 (GPU 와 속도 비교용)",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s03_train_surrogate.py --case case118 --epochs 100 --device cpu --tag _cpu --no-save",
+      "problemMatcher": []
+    },
+    {
       "label": "4. 그림 그리기 — case30",
       "type": "shell",
       "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s04_plot.py --case case30",

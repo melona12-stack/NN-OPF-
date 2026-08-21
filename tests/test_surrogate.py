@@ -356,3 +356,35 @@ def test_models_fill_slack_angle_with_reference():
         assert torch.allclose(
             Va[:, sl], torch.full_like(Va[:, sl], float(np.pi / 6)), atol=1e-6
         )
+
+
+# ---------------------------------------------------------------- 장치 배치
+def test_resolve_device_never_lies():
+    """``resolve_device`` 는 available 만 믿지 않고 실제 연산을 해 본다.
+
+    cu126 이하 빌드에 Blackwell GPU 를 물리면 ``is_available()`` 은 True 인데
+    첫 커널에서 터진다. auto 는 그런 경우 CPU 로 물러서야 한다.
+    """
+    from nnopf.train import resolve_device
+
+    assert resolve_device("cpu").type == "cpu"
+    dev = resolve_device("auto")
+    assert dev.type in ("cpu", "cuda")
+    # 무엇을 고르든 그 위에서 실제로 곱셈이 된다
+    (torch.zeros(4, 4, device=dev) @ torch.zeros(4, 4, device=dev)).sum().item()
+
+
+def test_bundle_places_tensors_and_keeps_float64_on_cpu(ds):
+    """학습 텐서는 지정 장치로, 배정밀도 물리는 항상 CPU 로.
+
+    소비자용 GeForce 는 배정밀도가 단정밀도의 1/64 속도라, 잔차를 GPU 에서
+    재면 오히려 느려진다. 그래서 ``physics64`` 만은 옮기지 않는다.
+    """
+    b, model = prepare(ds, _spec(), case=CASE, device="cpu")
+    assert b.device.type == "cpu"
+    assert b.X.device == b.device
+    assert b.physics64.G.device.type == "cpu"
+    assert next(model.parameters()).device == b.device
+
+    m = evaluate(model, b, b.split["test"][:64])
+    assert np.isfinite(m["p_mismatch"]) and np.isfinite(m["vlim_viol_pct"])

@@ -182,16 +182,33 @@ class ACPhysics:
         pv_term = ((dP * (self.mask_p - self.mask_q)) ** 2).sum(-1) / n_pv
         return (pq_term + pv_term).mean()
 
-    def to(self, dtype: torch.dtype) -> "ACPhysics":
-        """dtype 을 바꾼 사본. 최종 평가를 float64 로 돌릴 때 쓴다."""
+    def to(
+        self,
+        dtype: torch.dtype | None = None,
+        device: torch.device | str | None = None,
+    ) -> "ACPhysics":
+        """dtype·device 를 바꾼 사본.
+
+        .. warning::
+           **float64 판은 GPU 로 옮기지 않는다.** 소비자용 GeForce 는 배정밀도
+           처리율이 단정밀도의 1/64 라, 잔차를 GPU 에서 재면 CPU 보다 오히려
+           느리다. 학습(float32)만 GPU 로 보내고 최종 잔차 측정은 CPU 에 둔다.
+        """
         import copy
 
         out = copy.copy(self)
-        out.dtype = dtype
+        if dtype is not None:
+            out.dtype = dtype
+        mv = lambda v: None if v is None else v.to(
+            **({"dtype": dtype} if dtype is not None else {}),
+            **({"device": device} if device is not None else {}),
+        )
         for name in ("G", "B", "mask_p", "mask_q", "p_scale", "q_scale"):
-            v = getattr(self, name)
-            setattr(out, name, v if v is None else v.to(dtype))
+            setattr(out, name, mv(getattr(self, name)))
         for name in ("yff", "yft", "ytf", "ytt"):
             re, im = getattr(self, name)
-            setattr(out, name, (re.to(dtype), im.to(dtype)))
+            setattr(out, name, (mv(re), mv(im)))
+        if device is not None:   # 인덱스는 dtype 을 바꾸면 안 된다 (long 유지)
+            out.f_bus = self.f_bus.to(device)
+            out.t_bus = self.t_bus.to(device)
         return out
