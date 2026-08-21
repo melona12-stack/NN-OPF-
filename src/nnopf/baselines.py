@@ -46,7 +46,10 @@ class LinearSurrogate(nn.Module):
         return int(self.W.numel())
 
     def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        h = torch.cat([x, torch.ones(x.shape[0], 1, dtype=x.dtype)], 1) @ self.W
+        # 절편 열은 **입력과 같은 장치**에 만든다. device 를 빼먹으면 입력이
+        # GPU 일 때 여기서 터진다 — 신경망 쪽만 옮기고 비교군을 빠뜨리기 쉽다.
+        ones = torch.ones(x.shape[0], 1, dtype=x.dtype, device=x.device)
+        h = torch.cat([x, ones], 1) @ self.W
         vm, va = h[:, : self.n_vm], h[:, self.n_vm :]
         b = x.shape[0]
         Vm = self.v_set.expand(b, self.nb).index_copy(1, self.pq_idx, vm)

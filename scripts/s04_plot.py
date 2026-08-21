@@ -98,7 +98,7 @@ def per_sample_pct(model, b, idx) -> np.ndarray:
     return (dP.abs().sum(-1) / load * 100).numpy()
 
 
-def plot_error_split(pct_mlp, pct_lin, n1, t, out: Path) -> Path:
+def plot_error_split(pct_mlp, pct_lin, n1, t, out: Path, kind: str) -> Path:
     """오차 분포를 토폴로지로 쪼개서 — 이번 단계의 핵심 그림.
 
     가로축은 로그다. 두 모델의 오차 규모가 100배 차이라 선형 눈금으로는
@@ -117,7 +117,7 @@ def plot_error_split(pct_mlp, pct_lin, n1, t, out: Path) -> Path:
         ax.hist(np.clip(pct[~n1], lo, hi), bins=bins, color=t.series[0],
                 alpha=0.85, label=label("정상 토폴로지", "intact topology"))
         ax.hist(np.clip(pct[n1], lo, hi), bins=bins, color=t.series[1],
-                alpha=0.85, label=label("미지 N-1", "unseen N-1"))
+                alpha=0.85, label=kind)
         ax.set_xscale("log")
         ax.set_xlabel(label("표본별 유효전력 불일치 / 부하 (로그)",
                             "P mismatch / load (log)"))
@@ -125,8 +125,8 @@ def plot_error_split(pct_mlp, pct_lin, n1, t, out: Path) -> Path:
         ax.set_title(
             f"{name}\n"
             + label(
-                f"정상 {pct[~n1].mean():.2f}%   미지 N-1 {pct[n1].mean():.2f}%",
-                f"intact {pct[~n1].mean():.2f}%   unseen N-1 {pct[n1].mean():.2f}%",
+                f"정상 {pct[~n1].mean():.2f}%   {kind} {pct[n1].mean():.2f}%",
+                f"intact {pct[~n1].mean():.2f}%   {kind} {pct[n1].mean():.2f}%",
             ),
             color=t.ink, fontsize=11, loc="left", pad=10,
         )
@@ -134,19 +134,19 @@ def plot_error_split(pct_mlp, pct_lin, n1, t, out: Path) -> Path:
     axes[0].legend(loc="upper left", fontsize=10)
     fig.suptitle(
         label(
-            "오차는 퍼져 있지 않고 미지 N-1 표본에 뭉쳐 있다",
-            "Error is concentrated in unseen-N-1 samples, not spread out",
+            f"오차가 {kind} 표본에 뭉쳐 있는가",
+            f"Is the error concentrated in {kind} samples?",
         ),
         color=t.ink, fontsize=13, x=0.005, ha="left", y=1.06,
     )
     return save(fig, out)
 
 
-def plot_model_compare(pct_mlp, pct_lin, n1, t, out: Path) -> Path:
+def plot_model_compare(pct_mlp, pct_lin, n1, t, out: Path, kind: str) -> Path:
     """어디서 이기는지 — 정상/미지/전체 세 구간."""
     groups = [
         (label("정상 토폴로지", "intact"), ~n1),
-        (label("미지 N-1", "unseen N-1"), n1),
+        (kind, n1),
         (label("전체", "all"), np.ones_like(n1, bool)),
     ]
     names = [g[0] for g in groups]
@@ -301,11 +301,15 @@ def main() -> int:
         pct_lin = per_sample_pct(lin, b, te)
         n1 = (b.outage[torch.as_tensor(te, dtype=torch.long)].numpy() >= 0)
 
+        # 무작위 분할에서는 시험용 고장이 학습에도 나오므로 "미지" 가 아니다.
+        # 같은 그림에 같은 이름을 붙이면 결과를 잘못 읽게 된다.
+        unseen = payload.get("split") == "unseen-n1"
+        kind = label("미지 N-1", "unseen N-1") if unseen else label("N-1", "N-1")
         if n1.any() and (~n1).any():
             made.append(plot_error_split(pct_mlp, pct_lin, n1, t,
-                                         FIG / f"{stem}_02_error_split.png"))
+                                         FIG / f"{stem}_02_error_split.png", kind))
             made.append(plot_model_compare(pct_mlp, pct_lin, n1, t,
-                                           FIG / f"{stem}_03_compare.png"))
+                                           FIG / f"{stem}_03_compare.png", kind))
         else:
             print("  (분할에 한쪽 표본만 있어 토폴로지 비교는 건너뜁니다)")
         made.append(plot_per_bus(model, b, te, t, FIG / f"{stem}_04_per_bus.png"))

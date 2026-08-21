@@ -388,3 +388,20 @@ def test_bundle_places_tensors_and_keeps_float64_on_cpu(ds):
 
     m = evaluate(model, b, b.split["test"][:64])
     assert np.isfinite(m["p_mismatch"]) and np.isfinite(m["vlim_viol_pct"])
+
+
+def test_linear_baseline_follows_the_bundle_device(ds):
+    """비교군도 신경망과 같은 장치에서 평가된다.
+
+    GPU 학습을 붙일 때 신경망만 옮기고 선형 기준선을 빠뜨려 평가에서 터진
+    적이 있다. 장치가 섞이면 바로 RuntimeError 이므로, 같은 Bundle 로
+    평가가 끝까지 도는지만 확인하면 회귀를 잡을 수 있다.
+    """
+    from nnopf.baselines import fit_linear
+    from nnopf.train import resolve_device
+
+    dev = resolve_device("auto")
+    b, _ = prepare(ds, _spec(), case=CASE, device=dev)
+    lin = fit_linear(ds, b.layout, b.split["train"]).to(dev)
+    m = evaluate(lin, b, b.split["test"][:128])
+    assert np.isfinite(m["vm_mae"]) and np.isfinite(m["p_mismatch"])

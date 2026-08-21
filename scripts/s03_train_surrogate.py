@@ -161,7 +161,8 @@ def main() -> int:
     # 시드도 epoch 도 없다. 신경망은 이걸 넘어야 의미가 있다.
     b0, _ = prepare(ds, spec, split=split_full, device=DEVICE)
     t0 = time.time()
-    lin = fit_linear(ds, b0.layout, split_full["train"])
+    # 비교군도 같은 장치로. 신경망만 옮기고 여기를 빠뜨리면 평가에서 터진다.
+    lin = fit_linear(ds, b0.layout, split_full["train"]).to(DEVICE)
     m_lin = evaluate(lin, b0, split_full["test"])
     print(fmt_row("선형(최소제곱)", m_lin, time.time() - t0, "닫힌해"))
     results.append({"model": "linear", "metrics": m_lin})
