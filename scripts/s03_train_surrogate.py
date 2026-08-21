@@ -108,6 +108,8 @@ def main() -> int:
     p.add_argument("--model", default="mlp", choices=["mlp", "gat"],
                    help="gat = 그래프 어텐션 (M4). 입출력 계약은 같다")
     p.add_argument("--heads", type=int, default=4, help="gat 전용")
+    p.add_argument("--agg", default="softmax", choices=["softmax", "sum"],
+                   help="gat 전용: sum 은 소프트맥스 없이 합산 (조류방정식과 같은 꼴)")
     p.add_argument("--no-gate", action="store_true",
                    help="gat 전용 절제 실험: 끊긴 선로의 어텐션을 막지 않는다")
     p.add_argument("--hidden", type=int, default=None)
@@ -145,6 +147,7 @@ def main() -> int:
             vm_head=a.vm_head,
             residual=not a.no_residual,
             gate=not a.no_gate,
+            agg=a.agg,
         )
     else:
         spec = SurrogateSpec(
@@ -167,7 +170,8 @@ def main() -> int:
           f"val {len(split_full['val']):,} / test {len(split_full['test']):,})")
     dev_name = (torch.cuda.get_device_name(0) if DEVICE.type == "cuda"
                 else f"CPU ({a.threads} 스레드)")
-    kind = ("GAT · 헤드 %d · 게이팅 %s" % (spec.heads, "켬" if spec.gate else "끔")
+    kind = ("GAT · 헤드 %d · 집계 %s · 게이팅 %s"
+            % (spec.heads, spec.agg, "켬" if spec.gate else "끔")
             if a.model == "gat" else "MLP · %s" % spec.activation)
     print(f"모델: {kind} · hidden {spec.hidden} x {spec.layers}층 · "
           f"vm_head={spec.vm_head} · 선형지름길 {'있음' if spec.residual else '없음'}")

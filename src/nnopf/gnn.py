@@ -70,6 +70,7 @@ class GATSpec:
     gate: bool = True            # 끊긴 선로의 어텐션을 막는다 (③)
     edge_dim: int = 7            # r, x, sh, tap, status, g, b
     node_id: int = 16            # 모선별 학습 임베딩 차원 (0 이면 끔)
+    agg: str = "softmax"         # "softmax" = GAT · "sum" = 어드미턴스 가중 합
 
 
 class EdgeGAT(nn.Module):
@@ -84,11 +85,12 @@ class EdgeGAT(nn.Module):
     눌러 :math:`\alpha \to 0` 이 되게 한다.
     """
 
-    def __init__(self, dim: int, edge_dim: int, heads: int, gate: bool) -> None:
+    def __init__(self, dim: int, edge_dim: int, heads: int, gate: bool,
+                 agg: str = "softmax") -> None:
         super().__init__()
         assert dim % heads == 0, "hidden 은 heads 로 나누어 떨어져야 한다"
         self.h, self.d = heads, dim // heads
-        self.gate = gate
+        self.gate, self.agg = gate, agg
         self.src = nn.Linear(dim, dim, bias=False)
         self.dst = nn.Linear(dim, dim, bias=False)
         self.edge = nn.Linear(edge_dim, dim, bias=False)
@@ -119,16 +121,24 @@ class EdgeGAT(nn.Module):
             # ③ 끊긴 선로는 여기서 막는다. 학습에 맡기지 않고 구조로 보장.
             logit = logit + (1.0 - alive).unsqueeze(-1) * NEG
 
-        # 받는 노드별 소프트맥스. scatter 로 직접 짠다 — 노드 수가 작아
-        # 외부 그래프 라이브러리를 들이는 것보다 이쪽이 가볍다.
-        idx = d.view(1, -1, 1).expand(B, -1, H)
-        big = torch.full((B, N, H), NEG, device=x.device, dtype=logit.dtype)
-        big = big.scatter_reduce(1, idx, logit, "amax", include_self=True)
-        ex = (logit - big.gather(1, idx)).exp()
-        den = torch.zeros(B, N, H, device=x.device, dtype=ex.dtype).scatter_add(
-            1, idx, ex
-        )
-        alpha = ex / den.gather(1, idx).clamp(min=1e-16)
+        if self.agg == "sum":
+            # 소프트맥스를 쓰지 않는다. 조류방정식은 이웃 기여의 **합**이지
+            # 평균이 아니다 — :math:`YV` 를 보면 정규화가 없다. 소프트맥스는
+            # :math:`\sum\alpha = 1` 을 강제해서, 선로 5개가 붙은 모선과
+            # 1개가 붙은 모선이 같은 크기의 메시지를 받게 만든다.
+            # 대신 게이트를 0~1 로만 눌러 두고 크기는 살린다.
+            alpha = torch.sigmoid(logit) * alive.unsqueeze(-1)
+        else:
+            # 받는 노드별 소프트맥스. scatter 로 직접 짠다 — 노드 수가 작아
+            # 외부 그래프 라이브러리를 들이는 것보다 이쪽이 가볍다.
+            idx = d.view(1, -1, 1).expand(B, -1, H)
+            big = torch.full((B, N, H), NEG, device=x.device, dtype=logit.dtype)
+            big = big.scatter_reduce(1, idx, logit, "amax", include_self=True)
+            ex = (logit - big.gather(1, idx)).exp()
+            den = torch.zeros(B, N, H, device=x.device, dtype=ex.dtype).scatter_add(
+                1, idx, ex
+            )
+            alpha = ex / den.gather(1, idx).clamp(min=1e-16)
 
         msg = (self.val(x)[:, s].view(B, -1, H, D)
                + self.val_e(ea).view(B, -1, H, D)) * alpha.unsqueeze(-1)
@@ -223,7 +233,7 @@ class PowerFlowGAT(nn.Module):
         n_in = 8 + (spec.node_id if spec.node_id > 0 else 0)
         self.enc = nn.Sequential(nn.Linear(n_in, dim), nn.SiLU(), nn.Linear(dim, dim))
         self.blocks = nn.ModuleList(
-            EdgeGAT(dim, spec.edge_dim, spec.heads, spec.gate)
+            EdgeGAT(dim, spec.edge_dim, spec.heads, spec.gate, spec.agg)
             for _ in range(spec.layers)
         )
         self.drop = nn.Dropout(spec.dropout) if spec.dropout > 0 else nn.Identity()

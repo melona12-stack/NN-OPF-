@@ -136,32 +136,50 @@
       "problemMatcher": []
     },
     {
-      "label": "21. 측정 — 속도 CPU vs GPU (case30)",
+      "label": "21. M4 진단 A · 합산 집계 (소프트맥스 대신)",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s03_train_surrogate.py --case case30 --model gat -n 30000 --epochs 1500 --agg sum --tag _sum",
+      "problemMatcher": []
+    },
+    {
+      "label": "22. M4 진단 B · 층 깊게 8층 (시야 넓히기)",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s03_train_surrogate.py --case case30 --model gat -n 30000 --epochs 1500 --layers 8 --tag _deep",
+      "problemMatcher": []
+    },
+    {
+      "label": "23. M4 진단 C · 합산 + 8층 (둘 다)",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s03_train_surrogate.py --case case30 --model gat -n 30000 --epochs 1500 --agg sum --layers 8 --tag _sumdeep",
+      "problemMatcher": []
+    },
+    {
+      "label": "24. 측정 — 속도 CPU vs GPU (case30)",
       "type": "shell",
       "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s05_device_benchmark.py --case case30",
       "problemMatcher": []
     },
     {
-      "label": "22. 측정 — 속도 CPU vs GPU (case118)",
+      "label": "25. 측정 — 속도 CPU vs GPU (case118)",
       "type": "shell",
       "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s05_device_benchmark.py --case case118 --epochs 3",
       "problemMatcher": []
     },
     {
-      "label": "23. 검사 — 회귀 테스트 전체 (30분)",
+      "label": "26. 검사 — 회귀 테스트 전체 (30분)",
       "type": "shell",
       "command": "${workspaceFolder}/.venv/Scripts/python.exe -m pytest tests/ -q",
       "problemMatcher": [],
       "group": "test"
     },
     {
-      "label": "24. 업로드 — 결과를 GitHub 로",
+      "label": "27. 업로드 — 결과를 GitHub 로",
       "type": "shell",
       "command": "powershell -ExecutionPolicy Bypass -File ${workspaceFolder}/scripts/gpu_run.ps1 s03_train_surrogate.py --case case118 --epochs 1200 --tag _gpu",
       "problemMatcher": []
     },
     {
-      "label": "25. 확인 — 데이터가 내 것과 같은가 (지문 찍기)",
+      "label": "28. 확인 — 데이터가 내 것과 같은가 (지문 찍기)",
       "type": "shell",
       "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s06_data_fingerprint.py",
       "problemMatcher": []
