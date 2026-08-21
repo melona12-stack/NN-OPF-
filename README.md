@@ -115,11 +115,51 @@ tests/
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 
+# 환경 점검 — 새 컴퓨터에서 제일 먼저
+.venv/bin/python scripts/s00_check_env.py
+
 # 정합성 검증 실행
 .venv/bin/python scripts/s01_validate_vs_pandapower.py
 
 # 회귀 테스트 (66개)
 .venv/bin/python -m pytest tests/ -q
+```
+
+### 윈도우에서
+
+가상환경 실행 파일의 위치가 다릅니다. 문서와 아래 예시의 `.venv/bin/python` 을
+전부 `.venv\Scripts\python.exe` 로 바꿔 읽으시면 됩니다.
+
+```powershell
+python -m venv .venv
+.venv\Scripts\python.exe -m pip install -r requirements.txt
+.venv\Scripts\python.exe scripts/s00_check_env.py
+```
+
+매번 바꿔 쓰기 번거로우면 가상환경을 활성화해 두면 그냥 `python` 으로 쓸 수 있습니다.
+
+```powershell
+.venv\Scripts\Activate.ps1     # 실행정책 오류가 나면:
+                                # Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+python scripts/s00_check_env.py
+```
+
+### GPU (선택)
+
+NVIDIA GPU 가 있으면 4단계 학습이 수십 배 빨라집니다. **계산 능력(compute
+capability)에 맞는 PyTorch 빌드**를 깔아야 합니다.
+
+```powershell
+nvidia-smi --query-gpu=name,driver_version,memory.total,compute_cap --format=csv
+```
+
+`compute_cap` 이 **12.0** 이면 Blackwell(RTX 50 시리즈)이고, **cu128 이상**
+빌드가 필요합니다. 그 이전 빌드로 깔면 `torch.cuda.is_available()` 은 `True` 인데
+실제 연산에서 `no kernel image is available` 로 터집니다 — `s00_check_env.py` 가
+실제 행렬곱을 한 번 시켜 보고 이 경우를 잡아냅니다.
+
+```powershell
+.venv\Scripts\python.exe -m pip install torch --index-url https://download.pytorch.org/whl/cu128
 ```
 
 ### 사용 예
