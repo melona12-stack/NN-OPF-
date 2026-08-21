@@ -30,8 +30,13 @@ import torch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
+import json  # noqa: E402
+import math  # noqa: E402
+
 from nnopf.models import SurrogateSpec  # noqa: E402
 from nnopf.train import prepare, resolve_device, supervised_loss  # noqa: E402
+from nnopf.viz import label, save, setup  # noqa: E402
+import matplotlib.pyplot as plt  # noqa: E402
 
 sys.path.insert(0, str(ROOT / "scripts"))
 from s03_train_surrogate import PRESET, load_or_make  # noqa: E402
@@ -65,6 +70,33 @@ def time_epochs(ds, spec, split, case, device, batch, epochs, warmup=2) -> float
     if b.device.type == "cuda":
         torch.cuda.synchronize()
     return (time.perf_counter() - t0) / epochs * 1000
+
+
+def plot(case: str, n_train: int, batches, rows, names, out: Path) -> Path:
+    """**갱신 한 번당** 시간으로 그린다 — epoch 당 시간은 배치가 바뀌면
+    갱신 횟수도 같이 바뀌어서 두 가지가 섞여 보인다."""
+    t = setup()
+    fig, ax = plt.subplots(figsize=(7.5, 4.4))
+    for k, name in enumerate(names):
+        per_step = [
+            rows[i][k] / math.ceil(n_train / b) for i, b in enumerate(batches)
+        ]
+        ax.plot(batches, per_step, "o-", ms=8, color=t.series[k], label=name)
+        ax.annotate(f"{per_step[-1]:.1f} ms", (batches[-1], per_step[-1]),
+                    xytext=(8, 0), textcoords="offset points",
+                    color=t.ink, fontsize=10, va="center")
+    ax.set_xscale("log", base=2)
+    ax.set_yscale("log")
+    ax.set_xticks(batches, [str(b) for b in batches])
+    ax.set_xlabel(label("배치 크기", "batch size"))
+    ax.set_ylabel(label("가중치 갱신 1회당 시간", "time per optimizer step"))
+    ax.legend(loc="upper left")
+    ax.set_title(
+        label(f"{case} — GPU 는 배치를 키워도 갱신 한 번 시간이 그대로다",
+              f"{case} — GPU step time is flat in batch size"),
+        color=t.ink, fontsize=12, loc="left", pad=12,
+    )
+    return save(fig, out)
 
 
 def main() -> int:
@@ -101,21 +133,56 @@ def main() -> int:
     print(hdr)
     print("-" * len(hdr))
 
+    n_train, rows = len(split["train"]), []
     for batch in a.batches:
         row, times = f"{batch:>6}", []
         for _, dev in devices:
             ms = time_epochs(ds, spec, split, a.case, dev, batch, a.epochs)
             times.append(ms)
             row += f"{ms:>21.1f} ms"
+        rows.append(times)
         if len(times) == 2:
             cpu, gpu_ms = times
             faster = "GPU" if gpu_ms < cpu else "CPU"
             row += f"{faster} {max(cpu, gpu_ms) / min(cpu, gpu_ms):>6.2f}배"
         print(row)
 
-    print("\n배치를 키우면 GPU 쪽이 유리해집니다 — 호출 준비 시간이 한 번에")
-    print("처리하는 표본 수로 나눠지기 때문입니다. 다만 배치를 바꾸면 최적화")
-    print("자체가 달라지므로, 정확도는 §8 이 아니라 따로 확인해야 합니다.")
+    # --- 갱신 한 번당 시간 -------------------------------------------------
+    print(f"\n갱신 1회당 [ms] — epoch 당 시간을 갱신 횟수로 나눈 값")
+    hdr2 = f"{'배치':>6}{'갱신/epoch':>12}" + "".join(
+        f"{n[:16]:>18}" for n, _ in devices)
+    print(hdr2); print("-" * len(hdr2))
+    for i, batch in enumerate(a.batches):
+        steps = math.ceil(n_train / batch)
+        line = f"{batch:>6}{steps:>12}"
+        for k in range(len(devices)):
+            line += f"{rows[i][k] / steps:>15.2f} ms"
+        print(line)
+
+    if len(devices) == 2:
+        gpu_step = [rows[i][1] / math.ceil(n_train / b)
+                    for i, b in enumerate(a.batches)]
+        spread = max(gpu_step) / min(gpu_step)
+        print(f"\nGPU 갱신시간이 배치 {a.batches[0]}~{a.batches[-1]} 구간에서 "
+              f"{spread:.2f}배 안에서만 움직입니다.")
+        if spread < 2.5:
+            print("→ 계산이 아니라 **호출 준비**가 시간을 지배합니다. 즉 이 GPU 는")
+            print("  아직 놀고 있고, 모델을 키워도 시간이 거의 안 늘어납니다.")
+
+    out = ROOT / "figures" / f"{a.case}_device_benchmark.png"
+    plot(a.case, n_train, a.batches, rows, [n for n, _ in devices], out)
+    js = ROOT / "results" / f"{a.case}_device_benchmark.json"
+    js.parent.mkdir(exist_ok=True)
+    js.write_text(json.dumps({
+        "case": a.case, "n_train": n_train, "threads": a.threads,
+        "epochs_averaged": a.epochs, "batches": a.batches,
+        "devices": [n for n, _ in devices],
+        "ms_per_epoch": rows,
+    }, indent=2, ensure_ascii=False), encoding="utf-8")
+    print(f"\n그림: {out.relative_to(ROOT)}\n결과: {js.relative_to(ROOT)}")
+
+    print("\n배치를 바꾸면 최적화 자체가 달라집니다 — 같은 epoch 이라도 갱신")
+    print("횟수가 줄어듭니다. 그래서 여기서는 속도만 봅니다. 정확도는 따로.")
     return 0
 
 
