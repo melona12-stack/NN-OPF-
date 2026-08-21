@@ -133,7 +133,7 @@ python3 -m venv .venv
 # 정합성 검증 실행
 .venv/bin/python scripts/s01_validate_vs_pandapower.py
 
-# 테스트 81개 (회귀 71 + GAT 10)
+# 테스트 82개 (회귀 72 + GAT 10)
 .venv/bin/python -m pytest tests/ -q
 ```
 

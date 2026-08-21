@@ -125,6 +125,11 @@ def main() -> int:
     p.add_argument("--lam", type=float, default=None, help="물리손실 가중치 (0 = 순수 지도학습)")
 
     p.add_argument("--split", default="random", choices=["random", "unseen-n1"])
+    p.add_argument("--patience", type=int, default=200,
+                   help="검증이 이만큼 안 좋아지면 멈춘다")
+    p.add_argument("--select", default="loss", choices=["loss", "phys"],
+                   help="되돌릴 가중치를 고르는 기준. loss=표준화 지도손실, "
+                        "phys=검증 분할의 P/부하 %% (미지 N-1 에서는 이쪽)")
     p.add_argument("--lam-sweep", type=float, nargs="+", default=None)
     p.add_argument("--curve", type=int, nargs="+", default=None,
                    help="학습곡선: 이 표본 수들로 각각 학습")
@@ -160,6 +165,7 @@ def main() -> int:
     base_cfg = dict(
         epochs=a.epochs or pre["epochs"], batch=a.batch, lr=a.lr or pre["lr"],
         lam_warmup=pre["lam_warmup"], lam_ramp=pre["lam_ramp"], seed=a.train_seed,
+        patience=a.patience, select=a.select,
     )
 
     ds = load_or_make(a.case, n, a.seed, a.workers)

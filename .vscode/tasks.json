@@ -7,8 +7,12 @@
   //   없지만, 다른 컴퓨터에서 재현할 때는 순서대로 돌리면 된다.
   //
   // M4 의 규칙 (06 문서 §5.3): 비교는 반드시 **같은 표본 수 · 같은 분할 ·
-  // 같은 평가 코드**로만 한다. 하나라도 다르면 무엇 덕분에 좋아졌는지 알 수
-  // 없다. 그래서 9번 전에 7번을 반드시 먼저 돌려야 한다.
+  // 같은 평가 코드 · 같은 선택 규칙**으로만 한다. 하나라도 다르면 무엇 덕분에
+  // 좋아졌는지 알 수 없다. 그래서 9번 전에 7번을 반드시 먼저 돌려야 한다.
+  //
+  // 미지 N-1 작업(7·8·9·10번)은 전부 --select phys 다. 검증 분할에도 못 본
+  // 고장이 들어 있어 검증 손실이 몇 epoch 만에 바닥에 닿고, 그걸로 고르면
+  // 거의 학습되지 않은 모델이 뽑힌다 (06 문서 §7.8).
 
   "version": "2.0.0",
   "presentation": {
@@ -58,28 +62,28 @@
       "problemMatcher": []
     },
     {
-      "label": " 7. 기준선 ★ case30 미지 N-1 30,000 (5분) — 9번 전에 필수",
+      "label": " 7. 기준선 ★ case30 미지 N-1 · select phys (5분) — 9번 전에 필수",
       "type": "shell",
-      "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s03_train_surrogate.py --case case30 -n 30000 --epochs 1500 --split unseen-n1 --tag _final_un1",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s03_train_surrogate.py --case case30 -n 30000 --epochs 1500 --split unseen-n1 --select phys --tag _sel_un1",
       "problemMatcher": []
     },
     {
-      "label": " 8. 기준선 — case118 미지 N-1 60,000 (15분) — case118 GAT 비교용",
+      "label": " 8. 기준선 — case118 미지 N-1 · select phys (15분) — case118 GAT 비교용",
       "type": "shell",
-      "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s03_train_surrogate.py --case case118 -n 60000 --epochs 1500 --split unseen-n1 --tag _final_un1",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s03_train_surrogate.py --case case118 -n 60000 --epochs 1500 --split unseen-n1 --select phys --tag _sel_un1",
       "problemMatcher": []
     },
 
     {
-      "label": " 9. M4 ★★ GAT 8층 — case30 미지 N-1 (50분, 7번 먼저)",
+      "label": " 9. M4 ★★ GAT 8층 — case30 미지 N-1 · select phys (50분, 7번 먼저)",
       "type": "shell",
-      "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s03_train_surrogate.py --case case30 --model gat -n 30000 --epochs 1500 --layers 8 --split unseen-n1 --tag _gat_un1",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s03_train_surrogate.py --case case30 --model gat -n 30000 --epochs 1500 --layers 8 --split unseen-n1 --select phys --tag _sel_gat_un1",
       "problemMatcher": []
     },
     {
       "label": "10. M4 절제 — 게이팅 끄고 같은 조건 (50분, 9번 다음)",
       "type": "shell",
-      "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s03_train_surrogate.py --case case30 --model gat -n 30000 --epochs 1500 --layers 8 --split unseen-n1 --no-gate --tag _gat_un1_nogate",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s03_train_surrogate.py --case case30 --model gat -n 30000 --epochs 1500 --layers 8 --split unseen-n1 --select phys --no-gate --tag _sel_gat_un1_nogate",
       "problemMatcher": []
     },
     {
@@ -122,7 +126,7 @@
     {
       "label": "17. 그림 — case30 미지 N-1 (7번 먼저)",
       "type": "shell",
-      "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s04_plot.py --case case30 --tag _final_un1",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s04_plot.py --case case30 --tag _sel_un1",
       "problemMatcher": []
     },
     {
@@ -134,7 +138,7 @@
     {
       "label": "19. 분석 — 정상/미지 N-1 분해 (7번 먼저)",
       "type": "shell",
-      "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s03b_topology_breakdown.py --case case30 --tag _final_un1",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s03b_topology_breakdown.py --case case30 --tag _sel_un1",
       "problemMatcher": []
     },
 
@@ -163,7 +167,7 @@
       "problemMatcher": []
     },
     {
-      "label": "24. 검사 — 회귀 테스트 전체 81개 (30분)",
+      "label": "24. 검사 — 회귀 테스트 전체 82개 (30분)",
       "type": "shell",
       "command": "${workspaceFolder}/.venv/Scripts/python.exe -m pytest tests/ -q",
       "problemMatcher": [],

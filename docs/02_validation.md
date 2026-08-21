@@ -289,12 +289,12 @@ SLSQP는 등식제약 야코비안을 **조밀(dense) 행렬로 요구**합니�
 
 ```
 $ .venv/bin/python -m pytest tests/ -q
-81 passed
+82 passed
 ```
 
 1~2단계 테스트 22개의 내용입니다. 나머지는 3단계 22개
-([05 문서](05_dataset_generator.md)), 4단계 대체모델 27개와 그래프 어텐션 10개
-([06 문서](06_surrogate_training.md)) — 합쳐서 81개입니다.
+([05 문서](05_dataset_generator.md)), 4단계 대체모델 28개와 그래프 어텐션 10개
+([06 문서](06_surrogate_training.md)) — 합쳐서 82개입니다.
 
 | 테스트 | 대상 | 고정하는 주장 |
 |---|---|---|

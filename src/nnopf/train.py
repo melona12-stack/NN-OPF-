@@ -76,6 +76,22 @@ class TrainConfig:
     lr_patience: int = 30
     seed: int = 0
 
+    # 학습을 멈출 시점과 되돌릴 가중치를 **무엇으로 고를 것인가**.
+    #
+    #   "loss" — 표준화 지도손실. 무작위 분할에서는 이걸로 충분하다.
+    #   "phys" — 검증 분할의 P/부하 % (float32). 우리가 실제로 보고하는 값이다.
+    #
+    # 미지 N-1 에서는 "loss" 가 망가진다. 검증 분할에도 학습에서 못 본 고장이
+    # 들어 있어(dataset.py::split_unseen_n1) 검증 손실이 몇 epoch 만에 바닥에
+    # 닿고 그 뒤로 안 움직인다. 그러면 "최고 검증 시점" 이 거의 학습되지 않은
+    # 초반 epoch 이 되어 버린다 — GAT 는 1,500 중 **34** 가 뽑혔고, 그때 학습
+    # 손실은 끝까지 갔을 때보다 33배 나빴다. 검증이 2% 나빠지는 것을 아끼려고
+    # 33배를 버린 셈이다.
+    #
+    # 06 문서 §4.1 이 "검증 손실은 성능을 읽는 지표로 쓰면 안 된다" 고 적었는데,
+    # 미지 N-1 에서는 **멈출 시점을 정하는 지표로도** 못 쓴다.
+    select: str = "loss"
+
 
 def supervised_loss(
     model, Vm: torch.Tensor, Va: torch.Tensor,
@@ -343,6 +359,9 @@ def train(
         opt, factor=0.5, patience=cfg.lr_patience
     )
 
+    # 검증 분할의 평균 부하 — select="phys" 의 분모. 한 번만 잰다.
+    val_load = b.p_spec[va].abs().sum(-1).mean().clamp(min=1e-9)
+
     best = float("inf")
     best_state = {k: v.clone() for k, v in model.state_dict().items()}
     best_epoch = 0
@@ -391,14 +410,22 @@ def train(
         with torch.no_grad():
             Vm, Va = model(b.X[va])
             vloss = supervised_loss(model, Vm, Va, b.Vm[va], b.Va[va]).item()
-        sched.step(vloss)
+            # select="phys" 면 고르는 기준만 바꾼다. 기록에는 둘 다 남긴다.
+            vphys = float("nan")
+            if cfg.select == "phys":
+                rp, _ = b.physics.residual(
+                    Vm, Va, b.p_spec[va], b.q_spec[va], b.outage[va]
+                )
+                vphys = (rp.abs().sum(-1).mean() / val_load).item() * 100.0
+        crit = vphys if cfg.select == "phys" else vloss
+        sched.step(crit)
         hist.append(
-            {"epoch": ep, "train": tot / n_seen, "val": vloss, "lam": lam,
-             "lr": opt.param_groups[0]["lr"]}
+            {"epoch": ep, "train": tot / n_seen, "val": vloss, "val_phys": vphys,
+             "lam": lam, "lr": opt.param_groups[0]["lr"]}
         )
 
-        if vloss < best * (1 - 1e-5):
-            best, best_epoch = vloss, ep
+        if crit < best * (1 - 1e-5):
+            best, best_epoch = crit, ep
             best_state = {k: v.clone() for k, v in model.state_dict().items()}
         elif ep - best_epoch >= cfg.patience:
             if verbose:
@@ -406,8 +433,9 @@ def train(
             break
 
         if verbose and (ep % log_every == 0 or ep == cfg.epochs - 1):
+            extra = f"  P/부하 {vphys:.2f}%" if cfg.select == "phys" else ""
             print(
-                f"  ep {ep:4d}  train {tot/n_seen:.3e}  val {vloss:.3e}"
+                f"  ep {ep:4d}  train {tot/n_seen:.3e}  val {vloss:.3e}{extra}"
                 f"  λ {lam:.1e}  lr {opt.param_groups[0]['lr']:.1e}"
             )
 
@@ -416,7 +444,8 @@ def train(
         "phys_ref": phys_ref,
         "history": hist,
         "best_epoch": best_epoch,
-        "best_val": best,
+        "best_val": best,          # cfg.select 가 가리키는 기준의 최고값
+        "select": cfg.select,
         "seconds": time.time() - t0,
         "epochs_run": len(hist),
     }

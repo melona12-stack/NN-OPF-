@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import math
 import sys
 from pathlib import Path
 
@@ -456,3 +457,41 @@ def test_linear_baseline_truncation_is_chosen_on_validation(ds, sysm):
     b, _ = prepare(ds, _spec(), split=split, case=CASE)
     for m in (evaluate(picked, b, split["test"]), evaluate(plain, b, split["test"])):
         assert np.isfinite(m["p_over_load_pct"])
+
+
+# --------------------------------------------------------------------------
+# 미지 N-1 에서의 모델 선택 (06 문서 §7.8)
+# --------------------------------------------------------------------------
+
+def test_phys_selection_keeps_training_past_the_val_floor(ds):
+    """미지 N-1 에서는 검증 손실로 고르면 거의 학습되지 않은 모델이 뽑힌다.
+
+    ``split_unseen_n1`` 은 **검증 분할에도** 학습에서 못 본 고장을 넣는다.
+    그래서 검증 지도손실이 몇 epoch 만에 바닥에 닿고 그 뒤로 안 움직인다.
+    ``train`` 은 최고 검증 시점의 가중치로 되돌리므로, 그 바닥이 초반이면
+    **초반 모델이 최종 답이 된다.** 실측에서 GAT 는 1,500 중 34 가 뽑혔고
+    그때 학습 손실은 끝까지 갔을 때보다 33배 나빴다.
+
+    ``select="phys"`` 는 우리가 실제로 보고하는 값(검증 분할의 P/부하 %)으로
+    고른다. 그 지표는 계속 좋아지므로 학습이 초반에 끊기지 않는다.
+
+    고정하는 주장은 **"더 오래 학습한 모델이 뽑힌다"** 하나다. 어느 쪽 시험
+    성능이 나은지는 계통·모델마다 다를 수 있어 여기서 못박지 않는다.
+    """
+    un1 = ds.split_unseen_n1(seed=0)
+    b, model = prepare(ds, _spec(), split=un1, seed=0)
+    r_loss = train(model, b, TrainConfig(epochs=40, batch=64, seed=0,
+                                         select="loss"), verbose=False)
+
+    b2, model2 = prepare(ds, _spec(), split=un1, seed=0)
+    r_phys = train(model2, b2, TrainConfig(epochs=40, batch=64, seed=0,
+                                           select="phys"), verbose=False)
+
+    assert r_loss["select"] == "loss" and r_phys["select"] == "phys"
+    assert r_phys["best_epoch"] > r_loss["best_epoch"], (
+        f"phys 기준이 더 늦게까지 갱신돼야 한다 "
+        f"(loss {r_loss['best_epoch']} vs phys {r_phys['best_epoch']})"
+    )
+    # 기록에는 둘 다 남는다 — 나중에 어느 쪽으로 골랐는지 되짚을 수 있어야 한다.
+    assert not math.isnan(r_phys["history"][-1]["val_phys"])
+    assert math.isnan(r_loss["history"][-1]["val_phys"])
