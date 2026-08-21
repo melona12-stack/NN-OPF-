@@ -1,4 +1,4 @@
-# GPU 실험 한 번에 돌리기 (윈도우 전용)
+﻿# GPU 실험 한 번에 돌리기 (윈도우 전용)
 #
 #   .\scripts\gpu_run.ps1 s03_train_surrogate.py --case case118
 #
@@ -15,6 +15,11 @@
 #
 # 결과를 복사해 붙여넣는 대신 저장소로 돌려보내는 이유는 단순하다 —
 # 로그를 긁다 보면 숫자가 잘리거나 섞이는데, JSON 을 그대로 받으면 그럴 일이 없다.
+
+# 윈도우 PowerShell 5.1 은 .ps1 을 시스템 코드페이지(한국어 윈도우는 CP949)로
+# 읽는다. 그래서 이 파일은 **UTF-8 BOM** 으로 저장해야 한글이 안 깨진다.
+# 콘솔 출력 쪽도 UTF-8 로 맞춰 둔다. (편집할 때 BOM 을 지우면 다시 깨진다.)
+try { [Console]::OutputEncoding = [Text.Encoding]::UTF8 } catch { }
 
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
