@@ -1,0 +1,7 @@
+{
+  // VS Code 가 처음 열릴 때 "설치하시겠습니까?" 하고 물어보는 목록.
+  "recommendations": [
+    "ms-python.python",
+    "ms-toolsai.jupyter"
+  ]
+}

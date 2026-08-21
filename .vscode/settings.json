@@ -1,0 +1,12 @@
+{
+  // 이 프로젝트 전용 파이썬 — 시스템 파이썬이 아니라 .venv 를 쓴다.
+  "python.defaultInterpreterPath": "${workspaceFolder}/.venv/Scripts/python.exe",
+  "python.analysis.extraPaths": ["${workspaceFolder}/src"],
+  "python.testing.pytestEnabled": true,
+  "python.testing.pytestArgs": ["tests"],
+  "terminal.integrated.defaultProfile.windows": "PowerShell",
+  "files.exclude": { "**/__pycache__": true, "**/*.pyc": true },
+  "editor.rulers": [88],
+  "[python]": { "editor.tabSize": 4 },
+  "[markdown]": { "editor.wordWrap": "on" }
+}

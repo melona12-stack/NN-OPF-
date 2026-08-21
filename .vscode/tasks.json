@@ -1,0 +1,67 @@
+{
+  // VS Code 에서 Ctrl+Shift+P → "Run Task" → 목록에서 고르면 실행된다.
+  // 명령을 외우거나 타이핑할 필요가 없다.
+  "version": "2.0.0",
+  "options": {
+    "env": { "PY": "${workspaceFolder}/.venv/Scripts/python.exe" }
+  },
+  "presentation": { "reveal": "always", "panel": "dedicated", "clear": true },
+  "tasks": [
+    {
+      "label": "0. 환경 점검 (GPU 포함)",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s00_check_env.py",
+      "problemMatcher": [],
+      "group": "test"
+    },
+    {
+      "label": "1. 학습 — case30 빠르게 (300 epoch, 2분)",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s03_train_surrogate.py --case case30 --epochs 300",
+      "problemMatcher": []
+    },
+    {
+      "label": "2. 학습 — case30 미지 N-1 (일반화 시험)",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s03_train_surrogate.py --case case30 --split unseen-n1 --tag _un1",
+      "problemMatcher": []
+    },
+    {
+      "label": "3. 학습 — case118 (오래 걸림)",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s03_train_surrogate.py --case case118 --epochs 1200 --tag _gpu",
+      "problemMatcher": []
+    },
+    {
+      "label": "4. 그림 그리기 — case30",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s04_plot.py --case case30",
+      "problemMatcher": []
+    },
+    {
+      "label": "5. 그림 그리기 — case118 미지 N-1",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s04_plot.py --case case118 --tag _fix_un1",
+      "problemMatcher": []
+    },
+    {
+      "label": "6. 학습곡선 — 표본이 몇 개 필요한가",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s03_train_surrogate.py --case case30 --curve 500 1000 2000 4200 --tag _curve",
+      "problemMatcher": []
+    },
+    {
+      "label": "9. 회귀 테스트 66개 (30분)",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe -m pytest tests/ -q",
+      "problemMatcher": [],
+      "group": "test"
+    },
+    {
+      "label": "GPU 실험 → 결과를 GitHub 로 (pull → 학습 → push)",
+      "type": "shell",
+      "command": "powershell -ExecutionPolicy Bypass -File ${workspaceFolder}/scripts/gpu_run.ps1 s03_train_surrogate.py --case case118 --epochs 1200 --tag _gpu",
+      "problemMatcher": []
+    }
+  ]
+}

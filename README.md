@@ -129,7 +129,25 @@ python3 -m venv .venv
 .venv/bin/python -m pytest tests/ -q
 ```
 
-### 윈도우에서
+### VS Code 로 (권장)
+
+```powershell
+code .
+```
+
+터미널·코드·그림이 한 창에 들어온다. PowerShell 을 따로 열 필요가 없다.
+
+| 하고 싶은 것 | 방법 |
+|---|---|
+| 터미널 열기 | `Ctrl` + `~` |
+| 실험 실행 | `Ctrl+Shift+P` → `Run Task` → 목록에서 고르기 |
+| 그림 보기 | 왼쪽 `figures/` 에서 PNG 클릭 |
+| 파일 찾기 | `Ctrl+P` 누르고 이름 일부 입력 |
+
+실행 목록은 `.vscode/tasks.json` 에 있다. 명령을 외우거나 타이핑하지 않아도
+학습·그림·테스트를 고르기만 하면 된다.
+
+### 윈도우에서 (터미널만 쓸 때)
 
 가상환경 실행 파일의 위치가 다릅니다. 문서와 아래 예시의 `.venv/bin/python` 을
 전부 `.venv\Scripts\python.exe` 로 바꿔 읽으시면 됩니다.
