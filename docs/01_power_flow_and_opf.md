@@ -207,6 +207,50 @@ $Y_{bus}$ 는 $n_b \times n_b$ 복소행렬이고, 만드는 규칙은 두 줄�
 > - **대각 원소** $Y_{ii}$ = 모선 $i$ 에 붙은 **모든** 어드미턴스의 합
 > - **비대각 원소** $Y_{ij}$ = 모선 $i$–$j$ 를 잇는 어드미턴스의 **음수**
 
+#### 코드는 이 두 줄을 반복문 없이 씁니다
+
+선로를 하나씩 돌면서 네 자리에 더하는 방식도 되지만, 계통이 커지면 느립니다.
+연결행렬(incidence matrix) 곱으로 한 번에 만듭니다.
+
+```python
+# src/nnopf/ybus.py
+def make_ybus(sys, return_branch: bool = False):
+    """계통 어드미턴스 행렬 Ybus 를 만든다."""
+    nl, nb = sys.nl, sys.nb
+
+    # ① 선로마다 네 개의 어드미턴스 성분 (변압기 탭·위상까지 반영, §5.4)
+    Yff, Yft, Ytf, Ytt = make_branch_admittance(sys)
+
+    # ② 연결행렬: Cf[k, i] = 1 이면 선로 k 의 송단이 모선 i
+    Cf, Ct = make_connection_matrices(sys)
+
+    # ③ 선로 → 모선 사상. Yf @ V 가 선로 송단 전류가 된다
+    rows = np.arange(nl)
+    Yf = sp.csr_matrix((Yff, (rows, sys.f_bus)), shape=(nl, nb)) + \
+         sp.csr_matrix((Yft, (rows, sys.t_bus)), shape=(nl, nb))
+    Yt = sp.csr_matrix((Ytf, (rows, sys.f_bus)), shape=(nl, nb)) + \
+         sp.csr_matrix((Ytt, (rows, sys.t_bus)), shape=(nl, nb))
+
+    # ④ 모선 병렬 소자 (커패시터 뱅크, 리액터 등) — 대각에만 들어간다
+    Ysh = sp.diags(sys.Gs + 1j * sys.Bs, format="csr")
+
+    # ⑤ 합치면 끝. 위 규칙 두 줄이 이 한 줄이다
+    Ybus = (Cf.T @ Yf + Ct.T @ Yt + Ysh).tocsr()
+
+    if return_branch:
+        return Ybus, Yf, Yt
+    return Ybus
+```
+
+**⑤ 한 줄이 규칙 두 줄 전부입니다.** `Cf.T @ Yf` 가 각 선로의 기여를 그
+선로가 붙은 모선 자리로 **자동으로 모아 줍니다** — 같은 모선에 여러 선로가
+붙어 있으면 희소행렬 덧셈이 알아서 합칩니다. 그게 "대각은 합, 비대각은 음수"
+규칙이 실제로 일어나는 자리입니다.
+
+`Ysh` 를 **대각에 더한다**는 점을 기억해 두세요. 병렬 소자가 $Y_{bus}$ 안에
+있다는 뜻이고, 이것 때문에 [02 문서](02_validation.md) §4.3 의 회계 함정이
+생깁니다 (§11.1 에서 다시 다룹니다).
+
 ### 5.3 손으로 해 보는 3모선 예제
 
 모선 1–2 사이에 $y_a$, 모선 2–3 사이에 $y_b$ 인 선로가 있다고 합시다.
@@ -426,6 +470,48 @@ $$
 
 **야코비안은 "각 미지수를 조금 움직이면 각 방정식이 얼마나 변하는가"의 표**입니다.
 1차원 뉴턴법의 접선 기울기 $f'(x)$ 를 다차원으로 확장한 것입니다.
+
+#### 반복 루프는 열 줄입니다
+
+위 수식이 코드에서는 이렇게 생겼습니다. 우리 구현의 핵심 부분 그대로입니다.
+
+```python
+# src/nnopf/powerflow.py — solve_power_flow() 안
+V = Vm * np.exp(1j * Va)          # 초기치 (보통 |V|=1, θ=0)
+
+for it in range(1, max_iter + 1):
+    # ① 지금 전압에서 실제로 흐르는 전력을 계산한다 (§6.3 의 쉬운 방향)
+    S = sbus_from_V(Ybus, V)                      # S = V ⊙ conj(Ybus V)
+
+    # ② 지령값과의 차이 = 우리가 0 으로 만들고 싶은 f(x)
+    mis_p = Psp[pvpq] - np.real(S)[pvpq]          # 슬랙 뺀 모든 모선의 ΔP
+    mis_q = Qsp[pq]   - np.imag(S)[pq]            # PQ 모선의 ΔQ
+    F = np.concatenate([mis_p, mis_q])
+
+    # ③ 충분히 작으면 끝
+    norm = float(np.max(np.abs(F)))
+    if norm < tol:
+        converged = True
+        break
+
+    # ④ 야코비안을 만들고 J dx = F 를 푼다 (dx = J^-1 F)
+    J = _build_jacobian(Ybus, V, pvpq, pq)
+    dx = spla.spsolve(J.tocsc(), F)               # 희소 LU 분해
+
+    # ⑤ 미지수를 갱신한다. 순서가 F 와 같아야 한다
+    npvpq = len(pvpq)
+    Va[pvpq] += dx[:npvpq]                        # 앞쪽은 위상
+    Vm[pq]   += dx[npvpq:]                        # 뒤쪽은 PQ 전압 크기
+    V = Vm * np.exp(1j * Va)
+```
+
+**②와 ⑤의 인덱스가 짝이 맞아야 합니다.** `F` 를 `[ΔP@pvpq, ΔQ@pq]` 순서로
+쌓았으니 `dx` 도 `[Δθ@pvpq, Δ|V|@pq]` 순서로 나옵니다. 야코비안 블록도 같은
+순서로 만들어야 하고, 여기가 어긋나면 수렴하지 않거나 엉뚱한 답이 나옵니다.
+
+`spla.spsolve` 는 **역행렬을 만들지 않습니다** — $J^{-1}$ 를 계산하는 대신
+$J\,dx = F$ 를 LU 분해로 풉니다. $Y_{bus}$ 가 희소하니 $J$ 도 희소하고,
+case118 이면 236×344 행렬인데 실제 비영 원소는 몇 %뿐입니다.
 
 ### 8.3 야코비안을 손으로 유도한 이유
 

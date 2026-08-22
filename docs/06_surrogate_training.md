@@ -912,6 +912,70 @@ case118 은 **18층** 이 필요합니다. `EdgeGAT` 은 층마다 잔차연결 
 을 두고 있어(`gnn.py`) 그 깊이가 학습 가능합니다 — 진단 B 가 1,500 epoch 을
 발산 없이 완주한 것이 그 증거입니다.
 
+#### GAT 한 층의 코드
+
+세 절제 실험(`--agg`, `--gat-layers`, `--no-gate`)이 건드리는 자리가 전부
+이 함수 안에 있습니다.
+
+```python
+# src/nnopf/gnn.py — EdgeGAT.forward
+def forward(self, x, ei, ea, alive):
+    """x (B,N,dim) · ei (2,E) 정적 간선 · ea (B,E,edge_dim) · alive (B,E) 0/1"""
+    B, N, _ = x.shape
+    s, d = ei[0], ei[1]          # s = 보내는 노드, d = 받는 노드
+    H, D = self.h, self.d        # 헤드 수, 헤드당 차원
+
+    # ① 간선마다 (보내는 쪽, 받는 쪽, 간선 자체) 세 정보를 섞어 점수를 만든다
+    hs = self.src(x)[:, s].view(B, -1, H, D)
+    hd = self.dst(x)[:, d].view(B, -1, H, D)
+    he = self.edge(ea).view(B, -1, H, D)          # 간선 특징 = R, X, B, 탭 ...
+    logit = (F.leaky_relu(hs + hd + he, 0.2) * self.att).sum(-1)   # (B, E, H)
+
+    # ② 끊긴 선로를 막는다. 학습에 맡기지 않고 구조로 보장한다
+    if self.gate:
+        logit = logit + (1.0 - alive).unsqueeze(-1) * NEG   # NEG = -1e9
+
+    # ③ 이웃 가중치를 정하는 방식 — 여기가 진단 A 가 바꾼 자리다
+    if self.agg == "sum":
+        # 소프트맥스를 쓰지 않는다. 조류방정식 YV 는 이웃 기여의 **합**이지
+        # 평균이 아니다. 대신 게이트를 0~1 로만 눌러 두고 크기는 살린다.
+        alpha = torch.sigmoid(logit) * alive.unsqueeze(-1)
+    else:
+        alpha = softmax_by_dst(logit, d, N)       # 받는 노드별 소프트맥스
+
+    # ④ 메시지를 만들어 받는 노드로 모은다 (scatter_add = 이웃 합산)
+    msg = (self.val(x)[:, s].view(B, -1, H, D)
+           + self.val_e(ea).view(B, -1, H, D)) * alpha.unsqueeze(-1)
+    agg = torch.zeros(B, N, H, D, device=x.device, dtype=msg.dtype).scatter_add(
+        1, d.view(1, -1, 1, 1).expand(B, -1, H, D), msg
+    )
+
+    # ⑤ 잔차연결 + LayerNorm. 이 한 줄 덕분에 8층·18층이 학습된다
+    return self.norm(x + self.out(agg.reshape(B, N, H * D)))
+```
+
+**②가 이 모델의 존재 이유입니다.** MLP 에게 선로 상태는 입력 벡터 끝에 붙은
+0/1 비트일 뿐이지만(§4.1), 여기서는 **끊긴 선로가 메시지 경로 자체를 잃습니다.**
+`NEG` 를 더하면 소프트맥스를 지난 가중치가 정확히 0 이 되고, `sum` 집계에서는
+`* alive` 가 같은 일을 합니다. 못 본 고장이어도 구조가 자동으로 반영됩니다.
+
+**⑤가 깊이를 가능하게 합니다.** `x +` 가 잔차연결이라 층이 늘어도 신호가
+그대로 통과할 수 있고, `LayerNorm` 이 층마다 크기를 되돌립니다. 진단 C(`sum` +
+8층)가 epoch 64 에서 멈춘 것은 `sum` 이 ③에서 정규화를 없애 이 균형을 깬
+탓입니다 — 소프트맥스는 범인이 아니라 **깊이를 떠받치던 장치**였습니다.
+
+세 절제 실험이 코드의 어디를 껐다 켰는지 정리하면 이렇습니다.
+
+| 실험 | 바뀌는 곳 | 결과 |
+|---|---|---|
+| 진단 A `--agg sum` | ③ | 4.02% → 3.71% (거의 무변화 → 가설 기각) |
+| 진단 B `--gat-layers 8` | 층 수 | 4.02% → **1.10%** (3.7배 → 원인 확정) |
+| 진단 C 둘 다 | ③ + 층 수 | 3.25%, 최고 epoch 64 (발산에 가까움) |
+| 작업 10 `--no-gate` | ② | **아직 안 돌렸습니다** |
+
+`--no-gate` 를 아직 돌리지 않았다는 것은 **"②가 이 모델의 존재 이유"라는 위
+주장이 아직 실험으로 확인되지 않았다**는 뜻입니다. §10 에 남겨 두었습니다.
+
 > [!WARNING] 아직 끝난 이야기가 아닙니다
 > 8층 GAT 의 1.10% 는 4층보다 3.7배 낫지만 **여전히 MLP(0.35%)에 3.1배,
 > 선형(1.00%)에 근소하게 집니다.** 그리고 진단 B 는 1,500 epoch 을 다 쓰고도
@@ -1232,6 +1296,7 @@ case30 배치 64에서만 CPU가 이기고, 나머지는 전부 GPU입니다. ca
 - [x] **case30 미지 N-1 을 `--select phys` 로 다시 재기** — GAT 11.52% → 4.90% (§7.8.1)
 - [ ] **case118 미지 N-1 도 `--select phys` 로** — §4.1 수치가 아직 옛 규칙 값 (§7.8.1)
 - [ ] **손실을 야코비안 민감도로 가중** — GAT 가 전압 1등·물리 꼴찌인 것이 근거 (§2.2·§7.8.1)
+- [ ] **게이팅 절제 (`--no-gate`)** — 끊긴 선로 차단이 정말 효과가 있는지 미확인 (§7.7)
 - [ ] **case118 GAT 18층** — N-1 최악 지름이 18 이라 그 아래로는 안 됨 (§7.7)
 - [ ] GAT / PI-GAT — M4 의 본체
 
