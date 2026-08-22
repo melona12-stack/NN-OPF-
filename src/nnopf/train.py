@@ -33,7 +33,7 @@ from nnopf.physics_torch import ACPhysics
 
 __all__ = ["TrainConfig", "prepare", "train", "evaluate", "lambda_at",
            "resolve_device",
-           "supervised_loss", "input_stats"]
+           "supervised_loss", "input_stats", "jacobian_weights"]
 
 
 @dataclass(frozen=True)
@@ -91,6 +91,13 @@ class TrainConfig:
     # 06 문서 §4.1 이 "검증 손실은 성능을 읽는 지표로 쓰면 안 된다" 고 적었는데,
     # 미지 N-1 에서는 **멈출 시점을 정하는 지표로도** 못 쓴다.
     select: str = "loss"
+
+    # 손실을 **야코비안 민감도**로 가중할 세기 (:func:`jacobian_weights`).
+    #   0 — 지금까지의 균등 가중. 기본값이자 절제 실험의 대조군이다.
+    #   1 — 민감도를 그대로. 오차가 전력으로 크게 증폭되는 모선에 벌점을 몰아준다.
+    # 06 문서 §2.2·§7.7.1·§7.8.1 이 세 번 같은 곳을 가리켜서 넣었다 —
+    # "위상은 더 정확한데 물리 잔차는 더 나쁘다"가 세 실험에서 반복됐다.
+    jac_alpha: float = 0.0
 
 
 def supervised_loss(
@@ -171,6 +178,83 @@ def input_stats(X: np.ndarray, tr: np.ndarray, n_phys: int) -> tuple[np.ndarray,
     return mean.astype(np.float32), std.astype(np.float32)
 
 
+def jacobian_weights(
+    sysm: PowerSystem,
+    layout: IOLayout,
+    Vm_ref: np.ndarray,
+    Va_ref: np.ndarray,
+    alpha: float = 1.0,
+) -> tuple[np.ndarray, np.ndarray]:
+    r"""전압 오차가 **전력 잔차로 얼마나 증폭되는지**를 재서 손실 가중치를 만든다.
+
+    지금 손실은 모든 모선의 전압 오차를 똑같이 벌한다. 그런데 06 문서 §2.2 에서
+    야코비안으로 분해해 보니, 같은 크기의 오차라도 **어느 모선에 있느냐**에 따라
+    전력 잔차 기여가 1.7 배까지 달라졌다. 균등 가중 MSE 는 그걸 모른다.
+
+    그래서 각 예측 변수의 **민감도**를 잰다. 변수 :math:`x_j` (모선 j 의 위상
+    또는 전압크기) 를 조금 움직였을 때 잔차 벡터 전체가 얼마나 움직이는가 —
+    즉 잔차 야코비안의 **j 번째 열의 크기**다.
+
+    .. math::
+
+        s_j = \left\| \frac{\partial r}{\partial x_j} \right\|_2 ,\qquad
+        r = \big[\Delta P_{\text{비슬랙}};\ \Delta Q_{PQ}\big]
+
+    잔차를 거는 자리는 05 문서 §7 과 같다 — 슬랙에는 :math:`\Delta P` 를 걸지
+    않고, PV 에는 :math:`\Delta Q` 를 걸지 않는다. 두 블록은 단위가 다르므로
+    **각각 RMS 로 나눠** 대등하게 만든 뒤 합친다.
+
+    Parameters
+    ----------
+    Vm_ref, Va_ref
+        민감도를 잴 기준 운전점. **학습 분할 라벨의 평균**을 넣는다.
+        야코비안은 운전점마다 달라지지만, 정상 운전 영역에서 조류방정식이
+        거의 선형이라(06 문서 §2.1) 구조적 민감도는 기준점 하나로 충분하다.
+    alpha
+        가중 세기. ``0`` 이면 곱수가 전부 1 이라 **기존 손실과 완전히 같다**
+        (절제 실험의 대조군). ``1`` 이면 민감도를 그대로 쓴다.
+
+    Returns
+    -------
+    (m_vm, m_va)
+        각각 ``len(layout.pq)``, ``len(layout.nonslack)`` 길이의 곱수.
+        :math:`\overline{m^2} = 1` 로 맞춰 두므로 **손실의 크기가 변하지 않는다**
+        — 06 문서 §7.2 의 정규화 함정을 다시 밟지 않기 위해서다.
+
+    Notes
+    -----
+    N-1 표본에서는 실제 토폴로지가 다르지만 기저 :math:`Y_{bus}` 로 잰다.
+    선로 하나가 빠져도 "어느 모선이 뻣뻣한가"라는 구조는 거의 그대로이고,
+    표본마다 다시 재면 학습 전 준비가 계통 크기에 비례해 무거워진다.
+    """
+    from nnopf.powerflow import dSbus_dV
+
+    Ybus = sysm.ybus()
+    V = np.asarray(Vm_ref, float) * np.exp(1j * np.asarray(Va_ref, float))
+    dS_dVa, dS_dVm = dSbus_dV(Ybus, V)
+
+    non_slack = layout.nonslack          # ΔP 를 거는 행
+    pq = layout.pq                       # ΔQ 를 거는 행
+
+    def _sens(dS) -> np.ndarray:
+        M = np.asarray(dS.todense()) if hasattr(dS, "todense") else np.asarray(dS)
+        blk_p = np.real(M[non_slack, :])
+        blk_q = np.imag(M[pq, :])
+        rp = float(np.sqrt((blk_p**2).mean())) or 1.0
+        rq = float(np.sqrt((blk_q**2).mean())) or 1.0
+        return np.sqrt(((blk_p / rp) ** 2).sum(0) + ((blk_q / rq) ** 2).sum(0))
+
+    s_va = _sens(dS_dVa)[non_slack]       # θ 는 비슬랙만 예측한다
+    s_vm = _sens(dS_dVm)[pq]              # |V| 는 PQ 만 예측한다
+
+    def _norm(s: np.ndarray) -> np.ndarray:
+        m = np.power(np.maximum(s, 1e-12), float(alpha))
+        rms = float(np.sqrt((m**2).mean()))
+        return (m / rms).astype(np.float32) if rms > 0 else np.ones_like(m, np.float32)
+
+    return _norm(s_vm), _norm(s_va)
+
+
 def resolve_device(spec: str = "auto") -> torch.device:
     """``"auto" | "cpu" | "cuda"`` 를 실제 장치로.
 
@@ -196,6 +280,7 @@ def prepare(
     case: str | None = None,
     seed: int = 0,
     device: torch.device | str = "cpu",
+    jac_alpha: float = 0.0,
 ) -> tuple[Bundle, PowerFlowMLP]:
     """데이터셋에서 텐서 묶음과 (초기화된) 모델을 만든다.
 
@@ -233,6 +318,18 @@ def prepare(
         vm_lo = vm_tr.mean(0)                     # raw 모드: (평균, 표준편차)
         vm_hi = np.maximum(vm_tr.std(0), 1e-6)
 
+    # 손실 가중치. 기본은 1/표준편차 (06 문서 §7.2 — 이게 없으면 정규화가
+    # 학습을 죽인다). jac_alpha > 0 이면 여기에 야코비안 민감도 곱수를 얹는다.
+    vm_w = 1.0 / np.maximum(vm_tr.std(0), 1e-6)
+    va_w = 1.0 / np.maximum(va_tr.std(0), 1e-6)
+    if jac_alpha > 0:
+        # 기준 운전점은 **학습 분할 라벨의 평균**. 검증·시험을 보지 않는다.
+        m_vm, m_va = jacobian_weights(
+            sysm, layout, ds.Vm[tr].mean(0), ds.Va[tr].mean(0), alpha=jac_alpha
+        )
+        vm_w = vm_w * m_vm
+        va_w = va_w * m_va
+
     # 헤드·정규화 통계는 두 모델이 **똑같이** 쓴다. 여기가 갈리면 비교가
     # 무너지므로 한 곳에서 만들어 넘긴다.
     head_kw = dict(
@@ -240,8 +337,7 @@ def prepare(
         v_set=ds.v_set,
         vm_lo=vm_lo, vm_hi=vm_hi,
         va_mean=va_tr.mean(0), va_std=np.maximum(va_tr.std(0), 1e-6),
-        vm_w=1.0 / np.maximum(vm_tr.std(0), 1e-6),
-        va_w=1.0 / np.maximum(va_tr.std(0), 1e-6),
+        vm_w=vm_w, va_w=va_w,
     )
     if type(spec).__name__ == "GATSpec":
         from nnopf.gnn import PowerFlowGAT

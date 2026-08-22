@@ -26,7 +26,8 @@ from nnopf.case import PQ, SLACK  # noqa: E402
 from nnopf.models import IOLayout, PowerFlowMLP, SurrogateSpec  # noqa: E402
 from nnopf.physics_torch import ACPhysics  # noqa: E402
 from nnopf.train import (  # noqa: E402
-    TrainConfig, evaluate, lambda_at, prepare, supervised_loss, train,
+    TrainConfig, evaluate, jacobian_weights, lambda_at, prepare,
+    supervised_loss, train,
 )
 
 CASE = "case30"
@@ -495,3 +496,47 @@ def test_phys_selection_keeps_training_past_the_val_floor(ds):
     # 기록에는 둘 다 남는다 — 나중에 어느 쪽으로 골랐는지 되짚을 수 있어야 한다.
     assert not math.isnan(r_phys["history"][-1]["val_phys"])
     assert math.isnan(r_loss["history"][-1]["val_phys"])
+
+
+def test_jacobian_weights_are_scale_preserving_and_alpha_zero_is_a_no_op(sysm):
+    """야코비안 가중치는 손실 크기를 바꾸지 않고, alpha=0 이면 아무 일도 안 한다.
+
+    두 성질이 다 필요하다.
+
+    **① alpha=0 이 완전한 대조군이어야 한다.** 그래야 "가중을 켰더니 좋아졌다"
+    를 한 변수 실험으로 말할 수 있다 (06 문서 §5.3 의 비교 규칙).
+
+    **② 곱수의 제곱평균이 1 이어야 한다.** 손실 크기가 변하면 정규화가
+    다시 어긋난다 — 06 문서 §7.2 에서 학습을 죽였던 그 함정이다.
+    """
+    layout = IOLayout(sysm)
+    Vm = np.ones(sysm.nb)
+    Va = layout.va_ref.copy()
+
+    m_vm0, m_va0 = jacobian_weights(sysm, layout, Vm, Va, alpha=0.0)
+    assert np.allclose(m_vm0, 1.0) and np.allclose(m_va0, 1.0)
+
+    m_vm, m_va = jacobian_weights(sysm, layout, Vm, Va, alpha=1.0)
+    assert len(m_vm) == len(layout.pq)
+    assert len(m_va) == len(layout.nonslack)
+    for m in (m_vm, m_va):
+        assert abs(float(np.sqrt((m**2).mean())) - 1.0) < 1e-5
+        # 모선마다 실제로 달라야 의미가 있다. 균등이면 켤 이유가 없다.
+        assert m.max() / m.min() > 2.0
+
+
+def test_jac_alpha_only_rescales_within_a_group(ds):
+    """``jac_alpha`` 는 모선 사이의 **상대** 가중만 바꾸고 전체 크기는 안 바꾼다.
+
+    ``prepare`` 가 만든 두 모델의 ``vm_w`` / ``va_w`` 를 직접 비교한다.
+    비율의 제곱평균이 1 이면, 정규화가 의도대로 보존된 것이다.
+    """
+    _, m0 = prepare(ds, _spec(), seed=0, jac_alpha=0.0)
+    _, m1 = prepare(ds, _spec(), seed=0, jac_alpha=1.0)
+
+    assert not torch.allclose(m0.vm_w, m1.vm_w), "alpha=1 이면 가중치가 달라져야 한다"
+    assert not torch.allclose(m0.va_w, m1.va_w)
+
+    for w0, w1 in ((m0.vm_w, m1.vm_w), (m0.va_w, m1.va_w)):
+        r = (w1 / w0).numpy()
+        assert abs(float(np.sqrt((r**2).mean())) - 1.0) < 1e-4

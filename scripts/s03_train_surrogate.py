@@ -87,7 +87,8 @@ DEVICE = "cpu"     # main() 이 --device 로 정한다
 
 
 def run_one(ds, spec: SurrogateSpec, cfg: TrainConfig, split=None, quiet=False):
-    b, model = prepare(ds, spec, split=split, device=DEVICE)
+    b, model = prepare(ds, spec, split=split, device=DEVICE,
+                       jac_alpha=cfg.jac_alpha)
     r = train(model, b, cfg, verbose=not quiet)
     m = evaluate(model, b, b.split["test"])
     return model, b, r, m
@@ -127,6 +128,10 @@ def main() -> int:
     p.add_argument("--split", default="random", choices=["random", "unseen-n1"])
     p.add_argument("--patience", type=int, default=200,
                    help="검증이 이만큼 안 좋아지면 멈춘다")
+    p.add_argument("--jac-alpha", type=float, default=0.0,
+                   help="손실을 야코비안 민감도로 가중하는 세기. "
+                        "0=균등(기본), 1=민감도 그대로. 오차가 전력으로 크게 "
+                        "증폭되는 모선에 벌점을 몰아준다")
     p.add_argument("--select", default="loss", choices=["loss", "phys"],
                    help="되돌릴 가중치를 고르는 기준. loss=표준화 지도손실, "
                         "phys=검증 분할의 P/부하 %% (미지 N-1 에서는 이쪽)")
@@ -165,7 +170,7 @@ def main() -> int:
     base_cfg = dict(
         epochs=a.epochs or pre["epochs"], batch=a.batch, lr=a.lr or pre["lr"],
         lam_warmup=pre["lam_warmup"], lam_ramp=pre["lam_ramp"], seed=a.train_seed,
-        patience=a.patience, select=a.select,
+        patience=a.patience, select=a.select, jac_alpha=a.jac_alpha,
     )
 
     ds = load_or_make(a.case, n, a.seed, a.workers)
@@ -190,6 +195,9 @@ def main() -> int:
 
     # 비교군: 최소제곱 선형 대체모델. 06 부록 §4.1 의 기준선이고 닫힌 형태라
     # 시드도 epoch 도 없다. 신경망은 이걸 넘어야 의미가 있다.
+    # 선형 비교군에는 --jac-alpha 를 넘기지 않는다. fit_linear 은 절단선을
+    # 고를 때 자기 가중치(1/표준편차)를 따로 계산하므로 넘겨도 효과가 없고,
+    # 무엇보다 **기준선은 고정돼 있어야** 가중을 켠 효과를 읽을 수 있다.
     b0, _ = prepare(ds, spec, split=split_full, device=DEVICE)
     t0 = time.time()
     # 비교군도 같은 장치로. 신경망만 옮기고 여기를 빠뜨리면 평가에서 터진다.
