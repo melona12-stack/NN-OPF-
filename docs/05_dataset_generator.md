@@ -44,7 +44,8 @@
 |---|---|---|
 | **데이터 생성 (조류계산)** | **CPU 전용** | ✅ 66초 |
 | MLP 학습 | CPU도 되지만 느림 | ✅ 완료 (GPU) |
-| GAT / PI-GAT 학습 | GPU | 🔄 첫 시도 완료 ([06](06_surrogate_training.md) §5.3) |
+| GAT 학습 | GPU | ✅ case30 완료 — 미지 N-1 에서 2.61% ([06](06_surrogate_training.md) §7.7.0) |
+| PI-GAT 학습 | GPU | ⬜ 아직 |
 | 배치 추론 벤치마크 | GPU | ⚠️ CPU 기준 완료, GPU 재측정 남음 ([06](06_surrogate_training.md) §8) |
 
 게다가 데이터 생성기는 **설계 결정이 가장 많이 들어가는 부분**입니다 —
@@ -503,8 +504,10 @@ sp = ds.split_unseen_n1()    # {'train':…, 'val':…, 'test':…}
 - [x] λ 워밍업-램프 스케줄 + λ 민감도 곡선 (P2)
       P2 곡선은 재현되지 않았고, λ 를 두 손실 항의 비로 재정의했습니다
       ([06](06_surrogate_training.md) §3.1)
-- [ ] GAT / PI-GAT (**GPU 필요**) — 구현은 끝났고 아직 MLP 를 못 이깁니다
-      ([06](06_surrogate_training.md) §7.7·§7.8)
+- [x] GAT (**GPU 필요**) — 미지 N-1 에서 **MLP 를 1.8배 이겼습니다** (2.61% vs 4.80%).
+      선형(2.05%)에는 아직 1.27배 집니다
+      ([06](06_surrogate_training.md) §7.7·§7.7.0·§7.7.1)
+- [ ] PI-GAT (물리손실을 켠 GAT) — 아직 안 돌렸습니다
 
 ---
 
