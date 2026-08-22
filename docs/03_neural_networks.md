@@ -604,8 +604,10 @@ s.t. NN_θ(x) = 0      ← 조류방정식 대신 학습된 함수
 - [x] `scripts/s03_train_surrogate.py`
 - [x] 지표표·그림 자동 생성 — `scripts/s04_plot.py` (그림 5장),
       `scripts/s03b_topology_breakdown.py` (정상/미지 N-1 분해)
-- [ ] GAT / PI-GAT (**GPU 필요**) — 구현·테스트는 끝났고 아직 MLP 를 못 이깁니다
-      ([06](06_surrogate_training.md) §7.7·§7.8)
+- [x] GAT (**GPU 필요**) — 미지 N-1 에서 **MLP 를 1.8배 이겼습니다** (2.61% vs 4.80%).
+      다만 선형(2.05%)에는 아직 1.27배 집니다. 무작위 분할에서는 MLP 가 훨씬 낫습니다
+      ([06](06_surrogate_training.md) §7.7·§7.7.0·§7.7.1)
+- [ ] PI-GAT (물리손실을 켠 GAT) — 아직 안 돌렸습니다
 - [x] `results/` 에 설정 JSON + 지표 JSON을 항상 함께 저장
 
 ---
