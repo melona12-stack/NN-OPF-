@@ -216,6 +216,18 @@
       "problemMatcher": []
     },
     {
+      "label": "33. M4 ★★★ 대조군 — GAT 8층 · lr 5e-4 (50분, 29번과 짝)",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s03_train_surrogate.py --case case30 --model gat -n 30000 --epochs 1500 --layers 8 --lr 5e-4 --patience 600 --lr-patience 120 --split unseen-n1 --select phys --tag _sel_gat8lr_un1",
+      "problemMatcher": []
+    },
+    {
+      "label": "34. M4 ★★ GAT 12층 · lr 5e-4 · 3000 epoch (아직 수렴 전, 2.5시간)",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s03_train_surrogate.py --case case30 --model gat -n 30000 --epochs 3000 --layers 12 --lr 5e-4 --patience 900 --lr-patience 200 --split unseen-n1 --select phys --tag _sel_gat12long_un1",
+      "problemMatcher": []
+    },
+    {
       "label": "28. 업로드 — results/ 를 GitHub 로",
       "type": "shell",
       "command": "powershell -ExecutionPolicy Bypass -File ${workspaceFolder}/scripts/gpu_run.ps1 --commit-only",
