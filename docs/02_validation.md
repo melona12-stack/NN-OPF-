@@ -70,6 +70,27 @@
 
 ## 3. 1층 — $Y_{bus}$ 행렬
 
+### 3.0 검증 코드
+
+pandapower 는 `runpp` 를 돌리고 나면 **자기가 실제로 쓴 행렬**을
+`net._ppc["internal"]["Ybus"]` 에 남깁니다. 그걸 그대로 꺼내 비교합니다.
+
+```python
+# tests/test_nnopf.py::test_ybus_matches_pandapower
+import pandapower as pp, pandapower.networks as pn
+
+sysm = load_case(name)          # 우리 구현
+net  = getattr(pn, name)()
+pp.runpp(net, numba=False)      # 이걸 돌려야 내부 Ybus 가 채워진다
+
+ref = net._ppc["internal"]["Ybus"].toarray()
+assert np.max(np.abs(sysm.ybus().toarray() - ref)) == 0.0
+```
+
+마지막 줄에 **허용오차가 없습니다.** 같은 입력에 같은 공식을 쓰면 부동소수점
+연산 순서까지 같아서 비트 단위로 일치해야 하고, 실제로 그렇습니다.
+`< 1e-12` 같은 여유를 두면 진짜 어긋난 항을 놓칩니다 — §3.2 가 그 예입니다.
+
 ### 3.1 결과
 
 | 계통 | 모선 | 브랜치 | 발전기 | 최대 오차 |
@@ -124,6 +145,37 @@ def _col(idx):
 ---
 
 ## 4. 2층 — 뉴턴-랩슨 조류계산
+
+### 4.0 검증 코드
+
+전압으로 한 번, **모선 주입전력으로 또 한 번** 대조합니다. 전압만 보면
+발전기 매핑이 어긋난 경우를 놓치기 때문입니다.
+
+```python
+# src/nnopf/compare.py::compare_power_flow
+pp.runpp(net, numba=False, tolerance_mva=1e-10)   # 저쪽 허용오차를 우리보다 조인다
+mine = solve_power_flow(sysm, tol=1e-11)
+
+d_vm = np.max(np.abs(mine.Vm - net.res_bus.vm_pu.to_numpy()))
+d_va = np.max(np.abs(_angle_diff(
+    mine.Va, np.deg2rad(net.res_bus.va_degree.to_numpy()))))
+
+# 주입전력은 회계 규약을 먼저 맞춰야 한다 (§4.3 에서 겪은 함정)
+#   우리   S = V * conj(Ybus @ V)  -> 병렬 소자가 Ybus 안에 있어 제외된다
+#   저쪽   res_bus.p_mw           -> 그 모선의 모든 요소 합 (병렬 소자 포함)
+S     = mine.V * np.conj(sysm.ybus() @ mine.V)
+S_sh  = np.abs(mine.V) ** 2 * np.conj(sysm.Gs + 1j * sysm.Bs)
+S_src = S - S_sh                                  # 축을 맞춘 뒤에 비교한다
+
+d_p = np.max(np.abs(np.real(S_src) - ref_p))
+d_q = np.max(np.abs(np.imag(S_src) - ref_q))
+```
+
+`tolerance_mva=1e-10` 이 중요합니다. 기본값으로 두면 pandapower 쪽이 덜 수렴한
+상태라, 남는 차이가 **우리 오차인지 저쪽 오차인지 구분되지 않습니다.**
+
+`_angle_diff` 로 위상을 빼는 것도 이유가 있습니다. 위상은 $2\pi$ 주기라
+$-\pi$ 와 $+\pi$ 는 같은 각인데, 그냥 빼면 $2\pi$ 차이로 보입니다.
 
 ### 4.1 결과
 
@@ -201,6 +253,23 @@ S_src = S - S_sh          # 축을 맞춘 뒤 비교
 
 ## 5. 3층 — AC-OPF
 
+### 5.0 검증 코드
+
+OPF 는 **해가 여러 개일 수 있습니다.** 그래서 판정 기준을 둘로 나눕니다 —
+실행가능성과 목적함수 값만 불합격 사유로 삼고, 전압 프로파일은 경고로만 봅니다.
+
+```python
+# src/nnopf/compare.py::compare_opf
+mine = solve_acopf(sysm)
+rel_cost = abs(mine.cost - ref_cost) / max(abs(ref_cost), 1e-9)
+
+feasible = mine.max_eq_violation < 1e-6     # 조류방정식을 만족하는가
+ok = feasible and rel_cost < 1e-6           # 합격은 이 둘로만 판정한다
+
+if rel_cost < 1e-6 and d_vm >= 1e-4:        # 비용은 같은데 전압만 다르면
+    notes.append("최적해가 평평할 수 있습니다")   # 불합격이 아니라 경고
+```
+
 ### 5.1 결과
 
 | 계통 | 우리 비용 | pandapower 비용 | 상대오차 | 전압 차이 [pu] | 등식잔차 [pu] | 시간 [s] |
@@ -235,8 +304,19 @@ S_src = S - S_sh          # 축을 맞춘 뒤 비교
 OPF 해의 (Pg, Vm_gen)  ──►  뉴턴-랩슨에 다시 투입  ──►  나온 전압이 OPF 전압과 같은가?
 ```
 
-`tests/test_nnopf.py::test_opf_solution_is_a_true_power_flow_solution`
-→ case9, case30에서 전압 차이 $< 10^{-6}$ 확인.
+```python
+# tests/test_nnopf.py::test_opf_solution_is_a_true_power_flow_solution
+opt = solve_acopf(sysm)
+assert opt.max_eq_violation < 1e-6          # ① OPF 스스로는 만족한다고 말한다
+
+# ② 그 발전 지령을 진짜 조류계산에 다시 넣는다
+pf = solve_power_flow(sysm, Pg=opt.Pg,
+                      Vm_set=opt.Vm[sysm.gen_bus], tol=1e-11)
+assert pf.converged
+assert np.max(np.abs(pf.Vm - opt.Vm)) < 1e-6   # ③ 같은 전압이 나오는가
+```
+
+case9, case30에서 전압 차이 $< 10^{-6}$ 을 확인했습니다.
 
 > [!IMPORTANT] 이 테스트가 4~5단계의 핵심 평가 도구가 됩니다
 > 신경망 대체모델을 OPF에 넣으면, 그 OPF는 **자기 근사모델 기준으로는** 제약을
