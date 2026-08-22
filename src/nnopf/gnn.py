@@ -67,6 +67,8 @@ class GATSpec:
     vm_head: str = "scaled"      # PowerFlowMLP 와 같은 뜻
     vm_margin: float = 0.05
     residual: bool = True        # 선형 지름길
+    skip_init: str = "zero"      # "zero" | "lstsq" — models.SurrogateSpec 와 같은 뜻
+    skip_freeze: bool = False    # 지름길을 얼려 둔다
     gate: bool = True            # 끊긴 선로의 어텐션을 막는다 (③)
     edge_dim: int = 7            # r, x, sh, tap, status, g, b
     node_id: int = 16            # 모선별 학습 임베딩 차원 (0 이면 끔)

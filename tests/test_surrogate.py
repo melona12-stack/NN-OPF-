@@ -26,8 +26,8 @@ from nnopf.case import PQ, SLACK  # noqa: E402
 from nnopf.models import IOLayout, PowerFlowMLP, SurrogateSpec  # noqa: E402
 from nnopf.physics_torch import ACPhysics  # noqa: E402
 from nnopf.train import (  # noqa: E402
-    TrainConfig, evaluate, jacobian_weights, lambda_at, prepare,
-    supervised_loss, train,
+    TrainConfig, evaluate, init_skip_lstsq, jacobian_weights, lambda_at,
+    prepare, supervised_loss, train,
 )
 
 CASE = "case30"
@@ -540,3 +540,52 @@ def test_jac_alpha_only_rescales_within_a_group(ds):
     for w0, w1 in ((m0.vm_w, m1.vm_w), (m0.va_w, m1.va_w)):
         r = (w1 / w0).numpy()
         assert abs(float(np.sqrt((r**2).mean())) - 1.0) < 1e-4
+
+
+def test_lstsq_skip_init_starts_the_model_at_the_linear_baseline(ds):
+    """``skip_init="lstsq"`` 는 **학습 한 번 하기 전에** 선형 기준선과 같아야 한다.
+
+    ``models.py`` 는 지름길의 목적을 "신경망은 선형에 대한 보정만 배운다" 로
+    적어 두었지만, 지름길이 0 에서 함께 학습되면 그건 구조가 아니라 희망이다.
+    최소제곱 해로 초기화하고 본체 마지막 층을 0 으로 눌러야 **출발점이 곧
+    선형 해**가 된다.
+
+    고정하는 주장 둘:
+
+    1. lstsq 초기화 모델은 학습 전에 이미 zero 초기화보다 훨씬 낫다.
+    2. 그 성능이 ``fit_linear`` 의 선형 기준선과 같은 자릿수다.
+       (완전히 같지는 않다 — ``vm_head="scaled"`` 의 시그모이드를 거꾸로
+       통과시키는 과정에서 오차가 조금 생긴다.)
+    """
+    from nnopf.baselines import fit_linear
+
+    sp = ds.split_unseen_n1(seed=0)
+    b0, m0 = prepare(ds, _spec(), split=sp, seed=0)
+    b1, m1 = prepare(ds, _spec(skip_init="lstsq"), split=sp, seed=0)
+
+    e0 = evaluate(m0, b0, sp["test"])["p_over_load_pct"]
+    e1 = evaluate(m1, b1, sp["test"])["p_over_load_pct"]
+    lin = fit_linear(ds, b1.layout, sp["train"], sp["val"])
+    el = evaluate(lin, b1, sp["test"])["p_over_load_pct"]
+
+    assert e1 < e0 / 3, f"lstsq 초기화가 zero 보다 훨씬 나아야 한다 ({e1:.2f} vs {e0:.2f})"
+    assert e1 < el * 1.5, f"선형 기준선과 같은 자릿수여야 한다 ({e1:.2f} vs {el:.2f})"
+    assert b1.skip_init["body_zeroed"] is True
+    assert b1.skip_init["n_dropped"] > 0, "상수열을 빼야 한다 (06 문서 §7.6)"
+
+
+def test_skip_freeze_keeps_the_shortcut_fixed(ds):
+    """``skip_freeze`` 를 켜면 학습이 지름길을 건드리지 않아야 한다."""
+    sp = ds.split_unseen_n1(seed=0)
+    b, m = prepare(ds, _spec(skip_init="lstsq", skip_freeze=True), split=sp, seed=0)
+    before = m.skip.weight.detach().clone()
+
+    assert not m.skip.weight.requires_grad
+    train(m, b, TrainConfig(epochs=6, batch=64, seed=0), verbose=False)
+    assert torch.equal(m.skip.weight, before), "얼린 지름길이 학습으로 바뀌면 안 된다"
+
+    # 얼리지 않으면 바뀌어야 한다 (이 시험 자체가 유효한지 확인).
+    b2, m2 = prepare(ds, _spec(skip_init="lstsq"), split=sp, seed=0)
+    w2 = m2.skip.weight.detach().clone()
+    train(m2, b2, TrainConfig(epochs=6, batch=64, seed=0), verbose=False)
+    assert not torch.equal(m2.skip.weight, w2)

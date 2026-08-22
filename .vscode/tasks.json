@@ -198,6 +198,24 @@
       "problemMatcher": []
     },
     {
+      "label": "30. M4 ★★ 지름길을 선형 해로 초기화 — MLP 미지 N-1 (5분)",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s03_train_surrogate.py --case case30 -n 30000 --epochs 1500 --split unseen-n1 --select phys --skip-init lstsq --tag _lsq_un1",
+      "problemMatcher": []
+    },
+    {
+      "label": "31. M4 ★★ 위와 같되 지름길을 얼림 — MLP 미지 N-1 (5분)",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s03_train_surrogate.py --case case30 -n 30000 --epochs 1500 --split unseen-n1 --select phys --skip-init lstsq --skip-freeze --tag _lsqfz_un1",
+      "problemMatcher": []
+    },
+    {
+      "label": "32. M4 — 지름길 선형초기화 · case118 미지 N-1 (15분)",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s03_train_surrogate.py --case case118 -n 60000 --epochs 1500 --split unseen-n1 --select phys --skip-init lstsq --tag _lsq_un1",
+      "problemMatcher": []
+    },
+    {
       "label": "28. 업로드 — results/ 를 GitHub 로",
       "type": "shell",
       "command": "powershell -ExecutionPolicy Bypass -File ${workspaceFolder}/scripts/gpu_run.ps1 --commit-only",

@@ -128,6 +128,12 @@ def main() -> int:
     p.add_argument("--split", default="random", choices=["random", "unseen-n1"])
     p.add_argument("--patience", type=int, default=200,
                    help="검증이 이만큼 안 좋아지면 멈춘다")
+    p.add_argument("--skip-init", default="zero", choices=["zero", "lstsq"],
+                   help="선형 지름길의 출발점. zero=0 에서 함께 학습(기본), "
+                        "lstsq=학습 분할의 최소제곱 해에서 출발 "
+                        "(그러면 학습 첫 순간의 모델이 곧 선형 기준선이다)")
+    p.add_argument("--skip-freeze", action="store_true",
+                   help="지름길을 얼려 둔다. 신경망은 보정만 배운다")
     p.add_argument("--lr-patience", type=int, default=30,
                    help="검증이 이만큼 안 좋아지면 학습률을 절반으로. 깊은 GAT 는 "
                         "초반에 출렁여서 30 이면 LR 이 먼저 말라 버린다")
@@ -161,6 +167,7 @@ def main() -> int:
             residual=not a.no_residual,
             gate=not a.no_gate,
             agg=a.agg,
+            skip_init=a.skip_init, skip_freeze=a.skip_freeze,
         )
     else:
         spec = SurrogateSpec(
@@ -169,6 +176,7 @@ def main() -> int:
             activation=a.activation,
             vm_head=a.vm_head,
             residual=not a.no_residual,
+            skip_init=a.skip_init, skip_freeze=a.skip_freeze,
         )
     base_cfg = dict(
         epochs=a.epochs or pre["epochs"], batch=a.batch, lr=a.lr or pre["lr"],
@@ -189,7 +197,9 @@ def main() -> int:
             % (spec.heads, spec.agg, "켬" if spec.gate else "끔")
             if a.model == "gat" else "MLP · %s" % spec.activation)
     print(f"모델: {kind} · hidden {spec.hidden} x {spec.layers}층 · "
-          f"vm_head={spec.vm_head} · 선형지름길 {'있음' if spec.residual else '없음'}")
+          f"vm_head={spec.vm_head} · 선형지름길 "
+          f"{'없음' if not spec.residual else spec.skip_init}"
+          f"{' (얼림)' if spec.residual and spec.skip_freeze else ''}")
     print(f"장치: {dev_name}"
           + ("  (잔차 측정은 CPU float64)" if DEVICE.type == "cuda" else ""))
     # 학습 설정을 눈에 보이게 찍는다. 06 문서 §5.3 의 비교 규칙("같은 표본 수 ·

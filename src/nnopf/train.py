@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import json
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 import numpy as np
@@ -33,7 +33,8 @@ from nnopf.physics_torch import ACPhysics
 
 __all__ = ["TrainConfig", "prepare", "train", "evaluate", "lambda_at",
            "resolve_device",
-           "supervised_loss", "input_stats", "jacobian_weights"]
+           "supervised_loss", "input_stats", "jacobian_weights",
+           "init_skip_lstsq"]
 
 
 @dataclass(frozen=True)
@@ -151,6 +152,8 @@ class Bundle:
     physics: ACPhysics       # float32 (학습용) — device 위
     physics64: ACPhysics     # float64 (평가용) — 항상 CPU
     device: torch.device = torch.device("cpu")
+    # 지름길을 최소제곱으로 초기화했으면 그 기록 (고른 절단선 등). 안 했으면 빈 dict.
+    skip_init: dict = field(default_factory=dict)
 
 
 def input_stats(X: np.ndarray, tr: np.ndarray, n_phys: int) -> tuple[np.ndarray, np.ndarray]:
@@ -255,6 +258,130 @@ def jacobian_weights(
     return _norm(s_vm), _norm(s_va)
 
 
+def _zero_output_head(model) -> bool:
+    """본체의 **마지막 층**을 0 으로 만든다. 그러면 출력이 지름길 하나만 남는다.
+
+    :func:`init_skip_lstsq` 가 부르는 보조 함수다. 지름길만 최소제곱으로 채우고
+    본체를 무작위 초기화 그대로 두면, 학습 첫 순간의 출력이 **선형 해 + 무작위
+    잡음** 이 된다. 실측하면 case30 미지 N-1 에서 P/부하 17.9 % 로, 선형 기준선
+    2.95 % 와 한참 멀다. 본체 마지막 층까지 0 으로 눌러야 출발점이 정확히
+    선형 해가 된다.
+    """
+    with torch.no_grad():
+        if hasattr(model, "net"):                    # PowerFlowMLP
+            last = [m for m in model.net if isinstance(m, torch.nn.Linear)][-1]
+            last.weight.zero_(); last.bias.zero_()
+            return True
+        if hasattr(model, "head_w"):                 # PowerFlowGAT
+            model.head_w.zero_(); model.head_b.zero_()
+            return True
+    return False
+
+
+def init_skip_lstsq(
+    model, X: np.ndarray, Vm: np.ndarray, Va: np.ndarray,
+    tr: np.ndarray, va: np.ndarray | None = None,
+    zero_body: bool = True,
+) -> dict:
+    r"""선형 지름길을 **최소제곱 해로 초기화**한다.
+
+    ``models.py`` 는 지름길의 목적을 이렇게 적어 두었다 — "신경망은 사상 전체가
+    아니라 **선형에 대한 보정만** 배우면 된다". 그런데 지금 지름길은 **0 으로
+    초기화되어 본체와 함께 학습**된다. 즉 그 분업은 **구조가 아니라 희망**이다.
+    신경망은 여전히 선형 부분을 처음부터 다시 배워야 하고, 실제로 case30 미지
+    N-1 에서 MLP 4.00 % 가 선형 2.05 % 를 못 이긴다 (06 문서 §7.8.1).
+
+    그런데 그 선형 해는 **이미 닫힌 형태로 갖고 있다.** 여기서 출발시킨다.
+
+    핵심은 **모델 자신의 출력 공간에서** 최소제곱을 푼다는 것이다. 지름길은
+    정규화 입력 :math:`z` 를 받아 헤드 **직전** 값 ``(vm_raw, va_raw)`` 를
+    내놓으므로, 목표도 그 자리로 옮겨 놓아야 한다.
+
+    .. math::
+
+        t^{vm} = \mathrm{logit}\!\left(\frac{|V| - V^{lo}}{V^{hi}-V^{lo}}\right),
+        \qquad
+        t^{va} = \frac{\theta - \bar\theta}{\sigma_\theta}
+
+    ``vm_head="scaled"`` 의 시그모이드를 거꾸로 통과시키는 것이다. 상자에 여유가
+    5 % 있어서(``vm_margin``) 라벨이 항상 안쪽이므로 로짓이 발산하지 않는다.
+
+    절단선은 ``val`` 로 고른다 — 06 문서 §7.6 에서 상수열 때문에 설계행렬이
+    무너지는 것을 겪었고, 여기 :math:`z` 에도 같은 상수열이 그대로 있다.
+
+    Parameters
+    ----------
+    tr, va
+        학습 / 검증 분할 인덱스. **학습 분할로만 적합하고 검증으로 절단선만
+        고른다.** 시험 분할은 보지 않는다.
+
+    Returns
+    -------
+    dict
+        ``{"rcond": 고른 절단선, "val_mse": 그때 검증 오차, "n_col": 쓴 열 수}``.
+        아무 일도 안 했으면 빈 dict (지름길이 없는 모델).
+    """
+    if getattr(model, "skip", None) is None:
+        return {}
+
+    dev = model.skip.weight.device
+    f64 = lambda t: t.detach().double().cpu().numpy()
+    Xa = np.asarray(X, np.float64)
+    z = (Xa - f64(model.in_mean)) / f64(model.in_std)
+
+    pq = f64(model.pq_idx).astype(int)
+    vi = f64(model.va_idx).astype(int)
+    lo, hi = f64(model.vm_lo), f64(model.vm_hi)
+    am, asd = f64(model.va_mean), f64(model.va_std)
+
+    def targets(idx: np.ndarray) -> np.ndarray:
+        vm = np.asarray(Vm, np.float64)[idx][:, pq]
+        if model.spec.vm_head == "scaled":
+            u = np.clip((vm - lo) / np.maximum(hi - lo, 1e-12), 1e-6, 1 - 1e-6)
+            t_vm = np.log(u / (1.0 - u))          # 시그모이드의 역함수
+        else:
+            t_vm = (vm - lo) / np.maximum(hi, 1e-12)
+        t_va = (np.asarray(Va, np.float64)[idx][:, vi] - am) / asd
+        return np.concatenate([t_vm, t_va], axis=1)
+
+    # **상수열을 뺀다.** 06 문서 §7.6 에서 겪은 그대로다 — 상수열을 그냥 두면
+    # 설계행렬 조건수가 무너지고, 검증 손실은 거의 같은데 물리 잔차만 수십 배
+    # 커지는 방향이 살아남는다. 실제로 이 함수도 처음엔 상수열을 안 뺐고,
+    # 그 결과 초기화 직후 P/부하가 7.3 % (상수열 제거 후 3.0 %) 였다.
+    keep = np.flatnonzero(z[tr].std(0) > 0)
+    A = np.c_[z[tr][:, keep], np.ones(len(tr))]
+    T = targets(tr)
+
+    best_W, best_rc, best_mse = None, None, np.inf
+    if va is None or len(va) == 0:
+        best_W, *_ = np.linalg.lstsq(A, T, rcond=None)
+        best_rc = None
+    else:
+        Av, Tv = np.c_[z[va][:, keep], np.ones(len(va))], targets(va)
+        for rc in (1e-12, 1e-10, 1e-8, 1e-6, 1e-4, 1e-3, 1e-2):
+            W, *_ = np.linalg.lstsq(A, T, rcond=rc)
+            mse = float(((Av @ W - Tv) ** 2).mean())
+            if mse < best_mse:
+                best_W, best_rc, best_mse = W, rc, mse
+
+    # 뺐던 상수열 자리는 0 으로 되돌려 넣는다 (그 열은 어차피 z=0 이라 무해하다).
+    Wfull = np.zeros((z.shape[1] + 1, best_W.shape[1]))
+    Wfull[keep] = best_W[:-1]
+    Wfull[-1] = best_W[-1]
+
+    with torch.no_grad():
+        model.skip.weight.copy_(
+            torch.as_tensor(Wfull[:-1].T, dtype=model.skip.weight.dtype, device=dev)
+        )
+        model.skip.bias.copy_(
+            torch.as_tensor(Wfull[-1], dtype=model.skip.bias.dtype, device=dev)
+        )
+    zeroed = _zero_output_head(model) if zero_body else False
+    return {"rcond": best_rc, "val_mse": None if best_mse == np.inf else best_mse,
+            "n_col": int(A.shape[1]), "n_dropped": int(z.shape[1] - len(keep)),
+            "body_zeroed": zeroed}
+
+
 def resolve_device(spec: str = "auto") -> torch.device:
     """``"auto" | "cpu" | "cuda"`` 를 실제 장치로.
 
@@ -350,6 +477,15 @@ def prepare(
     else:
         model = PowerFlowMLP(layout, spec, **head_kw)
 
+    # 지름길을 최소제곱 해에서 출발시킨다 (spec.skip_init == "lstsq").
+    # 모델을 장치로 옮기기 **전에** 한다 — 풀이는 CPU float64 라 그게 자연스럽다.
+    skip_info: dict = {}
+    if getattr(spec, "skip_init", "zero") == "lstsq" and getattr(spec, "residual", False):
+        skip_info = init_skip_lstsq(model, X, ds.Vm, ds.Va, tr, split.get("val"))
+    if getattr(spec, "skip_freeze", False) and getattr(model, "skip", None) is not None:
+        for prm in model.skip.parameters():
+            prm.requires_grad_(False)
+
     dev = torch.device(device)
     t = lambda a, d=torch.float32: torch.as_tensor(
         np.asarray(a), dtype=d).to(dev)
@@ -368,6 +504,7 @@ def prepare(
         # 여기서 재면 오히려 느려진다.
         physics64=ACPhysics(sysm, torch.float64),
         device=dev,
+        skip_init=skip_info,
     )
     return bundle, model.to(dev)
 

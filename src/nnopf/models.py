@@ -98,11 +98,20 @@ class SurrogateSpec:
     vm_margin: float = 0.05     # scaled 박스에 더할 여유 (데이터 범위 대비 비율)
     residual: bool = True       # 입력->출력 선형 지름길 (아래 설명)
 
+    # 지름길의 **출발점**. 06 문서 §6.2 에서 잰다.
+    #   "zero"  — 0 에서 시작해 본체와 함께 배운다 (지금까지의 기본값).
+    #   "lstsq" — 학습 분할의 최소제곱 해에서 시작한다. 그러면 학습 첫 순간의
+    #             모델이 곧 선형 기준선이고, 신경망은 진짜로 **보정만** 배운다.
+    skip_init: str = "zero"
+    skip_freeze: bool = False   # True 면 지름길을 얼려 둔다 (본체만 학습)
+
     def __post_init__(self) -> None:
         if self.activation not in _ACT:
             raise ValueError(f"activation 은 {sorted(_ACT)} 중 하나여야 합니다")
         if self.vm_head not in ("scaled", "raw"):
             raise ValueError('vm_head 는 "scaled" 또는 "raw" 여야 합니다')
+        if self.skip_init not in ("zero", "lstsq"):
+            raise ValueError('skip_init 은 "zero" 또는 "lstsq" 여야 합니다')
 
 
 class IOLayout:
