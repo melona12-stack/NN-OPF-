@@ -93,9 +93,9 @@
       "problemMatcher": []
     },
     {
-      "label": "12. M4 — GAT 12층 · 미지 N-1 (지름 8 을 넘겨도 좋아지나, 75분)",
+      "label": "12. M4 — GAT 12층 · 미지 N-1 · patience 완화 (80분, 재실행)",
       "type": "shell",
-      "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s03_train_surrogate.py --case case30 --model gat -n 30000 --epochs 1500 --layers 12 --split unseen-n1 --select phys --tag _sel_gat12_un1",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s03_train_surrogate.py --case case30 --model gat -n 30000 --epochs 1500 --layers 12 --patience 600 --lr-patience 120 --split unseen-n1 --select phys --tag _sel_gat12_un1",
       "problemMatcher": []
     },
     {
@@ -180,15 +180,15 @@
       "problemMatcher": []
     },
     {
-      "label": "26. M4 ★ 야코비안 가중 손실 α=0.5 — MLP 미지 N-1 (5분)",
+      "label": "26. M4 ★ 야코비안 가중 α=0.5 — MLP 미지 N-1 (5분, 재실행)",
       "type": "shell",
-      "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s03_train_surrogate.py --case case30 -n 30000 --split unseen-n1 --select phys --jac-alpha 0.5 --tag _jac05_un1",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s03_train_surrogate.py --case case30 -n 30000 --epochs 1500 --split unseen-n1 --select phys --jac-alpha 0.5 --tag _jac05_un1",
       "problemMatcher": []
     },
     {
-      "label": "27. M4 ★ 야코비안 가중 손실 α=1.0 — MLP 미지 N-1 (5분)",
+      "label": "27. M4 ★ 야코비안 가중 α=1.0 — MLP 미지 N-1 (5분, 재실행)",
       "type": "shell",
-      "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s03_train_surrogate.py --case case30 -n 30000 --split unseen-n1 --select phys --jac-alpha 1.0 --tag _jac10_un1",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s03_train_surrogate.py --case case30 -n 30000 --epochs 1500 --split unseen-n1 --select phys --jac-alpha 1.0 --tag _jac10_un1",
       "problemMatcher": []
     },
     {

@@ -128,6 +128,9 @@ def main() -> int:
     p.add_argument("--split", default="random", choices=["random", "unseen-n1"])
     p.add_argument("--patience", type=int, default=200,
                    help="검증이 이만큼 안 좋아지면 멈춘다")
+    p.add_argument("--lr-patience", type=int, default=30,
+                   help="검증이 이만큼 안 좋아지면 학습률을 절반으로. 깊은 GAT 는 "
+                        "초반에 출렁여서 30 이면 LR 이 먼저 말라 버린다")
     p.add_argument("--jac-alpha", type=float, default=0.0,
                    help="손실을 야코비안 민감도로 가중하는 세기. "
                         "0=균등(기본), 1=민감도 그대로. 오차가 전력으로 크게 "
@@ -170,7 +173,8 @@ def main() -> int:
     base_cfg = dict(
         epochs=a.epochs or pre["epochs"], batch=a.batch, lr=a.lr or pre["lr"],
         lam_warmup=pre["lam_warmup"], lam_ramp=pre["lam_ramp"], seed=a.train_seed,
-        patience=a.patience, select=a.select, jac_alpha=a.jac_alpha,
+        patience=a.patience, lr_patience=a.lr_patience,
+        select=a.select, jac_alpha=a.jac_alpha,
     )
 
     ds = load_or_make(a.case, n, a.seed, a.workers)
@@ -187,7 +191,15 @@ def main() -> int:
     print(f"모델: {kind} · hidden {spec.hidden} x {spec.layers}층 · "
           f"vm_head={spec.vm_head} · 선형지름길 {'있음' if spec.residual else '없음'}")
     print(f"장치: {dev_name}"
-          + ("  (잔차 측정은 CPU float64)" if DEVICE.type == "cuda" else "") + "\n")
+          + ("  (잔차 측정은 CPU float64)" if DEVICE.type == "cuda" else ""))
+    # 학습 설정을 눈에 보이게 찍는다. 06 문서 §5.3 의 비교 규칙("같은 표본 수 ·
+    # 같은 분할 · 같은 평가 코드 · 같은 선택 규칙")을 지켰는지는 두 실행의 이
+    # 줄을 나란히 놓고 확인하는 것이 제일 빠르다. 실제로 --epochs 를 빠뜨려
+    # 기본값 300 으로 돌린 것을 결과가 나온 뒤에야 알아챈 적이 있다.
+    print(f"학습: epoch {base_cfg['epochs']} · 배치 {base_cfg['batch']} · "
+          f"lr {base_cfg['lr']:g} · patience {base_cfg['patience']}"
+          f"(lr {base_cfg['lr_patience']}) · select {base_cfg['select']} · "
+          f"jac_alpha {base_cfg['jac_alpha']:g} · 학습시드 {base_cfg['seed']}\n")
 
     results: list[dict] = []
     print(HEAD)
