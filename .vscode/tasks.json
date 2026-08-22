@@ -93,9 +93,9 @@
       "problemMatcher": []
     },
     {
-      "label": "12. M4 — GAT 12층 case30 (N-1 지름 8 을 넘겨도 좋아지나, 75분)",
+      "label": "12. M4 — GAT 12층 · 미지 N-1 (지름 8 을 넘겨도 좋아지나, 75분)",
       "type": "shell",
-      "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s03_train_surrogate.py --case case30 --model gat -n 30000 --epochs 1500 --layers 12 --tag _gat12",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s03_train_surrogate.py --case case30 --model gat -n 30000 --epochs 1500 --layers 12 --split unseen-n1 --select phys --tag _sel_gat12_un1",
       "problemMatcher": []
     },
     {
