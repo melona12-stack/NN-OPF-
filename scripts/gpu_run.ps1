@@ -56,7 +56,7 @@ $mins = 0
 $nStep = if ($commitOnly) { 3 } else { 4 }
 
 if ($commitOnly) {
-    Write-Host "`n[1/$nStep] 이미 돌린 결과만 올립니다 (git pull · 실험 건너뜀)." -ForegroundColor Cyan
+    Write-Host "`n[1/$nStep] 이미 돌린 결과만 올립니다 (실험 건너뜀)." -ForegroundColor Cyan
 } else {
     # --- 1) 최신 코드 -----------------------------------------------------
     Write-Host "`n[1/$nStep] 최신 코드 받는 중..." -ForegroundColor Cyan
@@ -126,6 +126,19 @@ if ($LASTEXITCODE -ne 0) {
 # --- 4) 푸시 -------------------------------------------------------------
 Write-Host "`n[$nStep/$nStep] 푸시 중..." -ForegroundColor Cyan
 $branch = git rev-parse --abbrev-ref HEAD
+
+# 밀어 넣기 전에 원격 변경을 먼저 받아 얹는다. 이게 없으면 클로드가 그 사이에
+# 올린 커밋 때문에 push 가 거부되고("fetch first"), 네트워크 재시도를 아무리
+# 해도 통과하지 못한다 - 거부는 네트워크 문제가 아니기 때문이다.
+Write-Host "      원격 변경 먼저 받는 중..." -ForegroundColor DarkGray
+git pull --rebase origin $branch
+if ($LASTEXITCODE -ne 0) {
+    git rebase --abort 2>$null
+    Write-Host "[중단] 원격 변경과 충돌합니다. 결과 커밋은 그대로 남아 있습니다." -ForegroundColor Red
+    Write-Host "       'git status' 결과를 클로드에게 알려 주세요."
+    exit 1
+}
+
 for ($i = 1; $i -le 4; $i++) {
     git push -u origin $branch
     if ($LASTEXITCODE -eq 0) { break }
