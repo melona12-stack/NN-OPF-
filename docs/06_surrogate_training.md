@@ -30,6 +30,65 @@
 case30이면 출력이 60개가 아니라 **53개**로 줄고, 줄어든 7개에는 근사가 아니라
 **정확한 값**이 들어갑니다.
 
+#### 코드로 보면 — 계약은 두 곳에 있습니다
+
+첫째, **무엇을 예측할지 정하는 곳**입니다.
+
+```python
+# src/nnopf/models.py
+class IOLayout:
+    """어떤 모선의 무엇을 예측하는지 — 모델과 학습 코드가 공유하는 계약."""
+
+    def __init__(self, sys: PowerSystem) -> None:
+        self.nb = sys.nb                                  # 모선 수
+        self.nl = len(sys.f_bus)                          # 선로 수
+
+        self.pq = np.flatnonzero(sys.bus_type == PQ)          # |V| 를 예측할 모선
+        self.nonslack = np.flatnonzero(sys.bus_type != SLACK) # θ 를 예측할 모선
+
+        # 슬랙 기준위상. **0 이라고 가정하면 안 된다** — case118 은 30° 다 (§7.4)
+        self.va_ref = np.zeros(self.nb)
+        self.va_ref[sys.bus_type == SLACK] = sys.Va0[sys.bus_type == SLACK]
+
+        self.in_dim  = 4 * self.nb + self.nl                  # Pd|Qd|p_ren|p_gen|status
+        self.out_dim = len(self.pq) + len(self.nonslack)      # case30 이면 24 + 29 = 53
+```
+
+둘째, **예측하지 않기로 한 값을 정확한 값으로 채워 넣는 곳**입니다.
+신경망 출력은 53개뿐인데 밖으로는 60개가 나가야 하니, 그 사이를 잇는 코드입니다.
+
+```python
+# src/nnopf/models.py — PowerFlowMLP.forward
+def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    """(B, in_dim) -> (Vm, Va) 각각 (B, nb)."""
+    z = (x - self.in_mean) / self.in_std      # 입력 정규화 (통계는 학습 분할만)
+    h = self.net(z)                           # MLP 본체
+    if self.skip is not None:
+        h = h + self.skip(z)                  # 선형 지름길 — 신경망은 잔차만 배운다
+
+    vm_raw, va_raw = h[:, : self.n_vm], h[:, self.n_vm :]   # 53개를 24 + 29 로 쪼갠다
+
+    if self.spec.vm_head == "scaled":
+        # 시그모이드가 [0,1] 이므로 결과가 박스를 벗어날 수 없다 (03 문서 §5.3)
+        vm = self.vm_lo + torch.sigmoid(vm_raw) * (self.vm_hi - self.vm_lo)
+    else:
+        vm = self.vm_lo + vm_raw * self.vm_hi
+    va = self.va_mean + va_raw * self.va_std                # 표준화 해제
+
+    # 여기가 핵심 두 줄이다.
+    #   v_set  : PV·슬랙의 |V| 는 설정값 그대로 (오차 7e-16)
+    #   va_ref : 슬랙 θ 는 계통 기준값 그대로
+    # 그 위에 예측한 값만 index_copy 로 덮어쓴다.
+    b = x.shape[0]
+    Vm = self.v_set.expand(b, self.nb).index_copy(1, self.pq_idx, vm)
+    Va = self.va_ref.expand(b, self.nb).index_copy(1, self.va_idx, va)
+    return Vm, Va
+```
+
+**마지막 두 줄만 보시면 됩니다.** `expand` 로 정확한 값을 깔고, `index_copy` 로
+예측한 자리만 덮습니다. 예측하지 않기로 한 7개는 **모델이 무슨 값을 내든 건드릴
+수 없습니다** — 규칙이 손실함수에 있는 게 아니라 자료구조에 있습니다.
+
 > [!NOTE] 물리 손실은 PyTorch로 옮겼습니다
 > `physics_torch.ACPhysics` 가 [05 문서](05_dataset_generator.md) §7의 NumPy 잔차와
 > **같은 식**을 미분 가능하게 구현합니다. 두 판이 기계정밀도(7.9e-15)로 일치하는지
@@ -223,6 +282,58 @@ case118에서 전혀 다른 뜻이 됩니다. P2의 λ=3e-3을 그대로 가져�
 > 처음에는 잔차를 모선별 지정주입 RMS로 나누는 것으로 충분하다고 봤는데,
 > 위 표가 보여주듯 **전혀 충분하지 않았습니다**. 크기를 직접 재 보기 전까지는
 > 정규화가 됐는지 알 수 없습니다.
+
+#### 코드 — 환산계수를 한 번 재서 계속 씁니다
+
+```python
+# src/nnopf/train.py — train() 안의 epoch 루프
+phys_ref = 1.0     # 물리 항을 지도 항과 같은 크기로 맞추는 환산계수
+
+for ep in range(cfg.epochs):
+    lam = lambda_at(ep, cfg)          # 워밍업/램프 스케줄 (아래)
+
+    if lam > 0 and phys_ref == 1.0:   # 램프가 시작되는 그 epoch 에 딱 한 번
+        with torch.no_grad():
+            k = tr[: min(1024, len(tr))]          # 학습 분할 앞쪽 1,024 표본
+            Vm0, Va0 = model(b.X[k])
+            s0 = supervised_loss(model, Vm0, Va0, b.Vm[k], b.Va[k]).item()   # 지도 항
+            p0 = b.physics.loss(Vm0, Va0,
+                                b.p_spec[k], b.q_spec[k], b.outage[k]).item()  # 물리 항
+        phys_ref = max(p0, 1e-12) / max(s0, 1e-12)   # case30 2.2e3, case118 2.1e7
+
+    for s in range(0, len(perm), cfg.batch):
+        j = perm[s : s + cfg.batch]
+        Vm, Va = model(b.X[j])
+        sup = supervised_loss(model, Vm, Va, b.Vm[j], b.Va[j])
+        loss = sup
+        if lam > 0:
+            # 여기가 재정의된 부분 — lam 을 phys_ref 로 나눠서 넣는다
+            loss = loss + (lam / phys_ref) * b.physics.loss(
+                Vm, Va, b.p_spec[j], b.q_spec[j], b.outage[j]
+            )
+```
+
+**`lam / phys_ref` 이 전부입니다.** 이 나눗셈이 없으면 `lam=1` 이 case30 에서는
+"물리를 2,200배 세게", case118 에서는 "2,100만배 세게"라는 뜻이 됩니다.
+나누고 나면 `lam=1` = **그 순간 두 항이 같은 크기**로, 계통이 바뀌어도 뜻이 같습니다.
+
+램프 스케줄은 이렇습니다.
+
+```python
+# src/nnopf/train.py
+def lambda_at(epoch: int, cfg: TrainConfig) -> float:
+    """λ 워밍업-램프 스케줄 (P2 §4.1).
+
+    초기에는 전압 예측이 엉망인데 그 값을 조류방정식에 넣으면 잔차 기울기가
+    폭주한다. 그래서 warmup 동안 λ=0 으로 지도학습만 하고, ramp 구간에서
+    선형으로 올린다.
+    """
+    if cfg.lam <= 0 or epoch < cfg.lam_warmup:          # 처음 20 epoch: 물리 항 끄기
+        return 0.0
+    if epoch >= cfg.lam_warmup + cfg.lam_ramp:          # 70 epoch 이후: 최대값
+        return cfg.lam
+    return cfg.lam * (epoch - cfg.lam_warmup + 1) / cfg.lam_ramp   # 그 사이는 선형
+```
 
 ---
 
@@ -437,6 +548,35 @@ case118은 **epoch 1,214에서 조기 종료**됐습니다(최고 1,014). 더 �
 
 **해결**: 선로상태 열은 **정규화하지 않습니다.** 이미 0/1이라 스케일이 맞습니다.
 물리량 열도 상수인 경우 나누지 않고 중심화만 합니다.
+
+```python
+# src/nnopf/train.py
+def input_stats(X: np.ndarray, tr: np.ndarray, n_phys: int):
+    """입력 정규화 통계. **선로상태 열은 정규화하지 않는다.**
+
+    n_phys = 4 * nb  (Pd|Qd|p_ren|p_gen 까지가 물리량, 그 뒤가 선로상태)
+    tr     = 학습 분할의 인덱스 — 검증/시험은 절대 보지 않는다
+    """
+    mean = X[tr].mean(0)
+    std = X[tr].std(0)
+
+    std = np.where(std > 1e-8, std, 1.0)   # 상수 열: 중심화만, 확대 금지
+    mean[n_phys:] = 0.0                    # 선로상태: 손대지 않는다
+    std[n_phys:] = 1.0
+
+    return mean.astype(np.float32), std.astype(np.float32)
+```
+
+**세 줄이 고친 전부입니다.**
+
+| 줄 | 막는 사고 |
+|---|---|
+| `np.where(std > 1e-8, std, 1.0)` | 상수 열을 $10^{-6}$ 같은 하한으로 나눠서 $10^{6}$ 으로 터뜨리는 것 |
+| `mean[n_phys:] = 0.0` | 0/1 상태를 중심화해서 "고장 아님"이 음수가 되는 것 |
+| `std[n_phys:] = 1.0` | 학습에서 한 번도 안 끊긴 선로의 std=0 을 나눗셈에 쓰는 것 |
+
+`1e-6` 이 아니라 `1.0` 으로 대체하는 것이 핵심입니다. 하한을 씌우는 흔한 처방
+(`std = max(std, eps)`)이 바로 이 버그를 만듭니다.
 
 ### 7.2 weight decay가 학습을 죽임
 
@@ -685,8 +825,74 @@ M4 의 첫 GAT 가 MLP 보다 **11배 나빴습니다** (case30 무작위, P/부
 
 **(b) 가 원인이었습니다.** 4층 → 8층에서 **3.7배** 개선입니다.
 
+#### 지름을 재는 코드
+
+층 수를 정하려고 쓴 스크립트 전체입니다. BFS 세 개면 끝납니다.
+
+```python
+# scripts/s07_graph_diameter.py
+def _adjacency(f_bus, t_bus, drop=None):
+    """무향 인접 리스트. drop 은 빼고 볼 선로 인덱스 (N-1 을 이걸로 만든다)."""
+    n = int(max(f_bus.max(), t_bus.max())) + 1
+    adj = [[] for _ in range(n)]
+    for k, (a, b) in enumerate(zip(f_bus, t_bus)):
+        if k == drop:                 # 이 선로만 없는 것처럼 그래프를 만든다
+            continue
+        adj[a].append(b)
+        adj[b].append(a)
+    return adj
+
+
+def _bfs(adj, s):
+    """모선 s 에서 각 모선까지의 hop 수. 도달 못 하면 -1."""
+    d = [-1] * len(adj)
+    d[s] = 0
+    q = collections.deque([s])
+    while q:
+        u = q.popleft()
+        for v in adj[u]:
+            if d[v] < 0:
+                d[v] = d[u] + 1
+                q.append(v)
+    return d
+
+
+def diameter(adj):
+    """(지름, 반지름, 평균 최단거리). 그래프가 갈라져 있으면 지름은 inf."""
+    n = len(adj)
+    ecc, total, pairs = [], 0, 0
+    for s in range(n):                # 모든 모선을 출발점으로 BFS
+        d = _bfs(adj, s)
+        if min(d) < 0:                # 도달 못 하는 모선이 있다 -> 계통이 갈라졌다
+            return float("inf"), float("inf"), float("inf")
+        ecc.append(max(d))            # 이 모선의 이심률 = 가장 먼 모선까지 hop
+        total += sum(d)
+        pairs += n
+    return max(ecc), min(ecc), total / pairs   # 지름 = 이심률의 최댓값
+
+
+def hop_coverage(adj, k):
+    """k-hop 안에 들어오는 모선 수의 평균 (자기 자신 포함)."""
+    return float(np.mean([sum(1 for x in _bfs(adj, s) if 0 <= x <= k)
+                          for s in range(len(adj))]))
+```
+
+**N-1 최악 지름은 `drop` 하나로 구합니다.** 선로 개수만큼 반복해서 최댓값을 취합니다.
+
+```python
+worst = max(diameter(_adjacency(sys.f_bus, sys.t_bus, drop=k))[0]
+            for k in range(len(sys.f_bus)))
+```
+
+끊긴 선로가 계통을 둘로 가르면 `diameter` 가 `inf` 를 돌려주므로, 그런 상정사고는
+자연히 걸러집니다.
+
+```bash
+$ .venv/bin/python scripts/s07_graph_diameter.py --case case30 --n1
+```
+
 > [!IMPORTANT] 층 수는 취향이 아니라 계통이 정해 주는 값입니다
-> 그래프 지름을 재 보면 숫자가 정확히 맞습니다 (`s07_graph_diameter.py`).
+> 위 스크립트로 재 보면 숫자가 정확히 맞습니다.
 >
 > | 계통 | 정상 지름 | **N-1 최악 지름** | 4층이 보는 범위 | 8층 | 12층 |
 > |---|---|---|---|---|---|
@@ -762,6 +968,48 @@ GAT 는 epoch 34 짜리, 거의 학습되지 않은 모델입니다. epoch 234 �
 --select loss   # 표준화 지도손실 (기본, 무작위 분할용)
 --select phys   # 검증 분할의 P/부하 % — 우리가 실제로 보고하는 값
 ```
+
+#### 코드 — 학습 루프에서 바뀐 것은 세 줄뿐입니다
+
+```python
+# src/nnopf/train.py — train() 안, 매 epoch 끝에서
+val_load = b.p_spec[va].abs().sum(-1).mean().clamp(min=1e-9)   # 루프 전에 한 번만
+
+# ... epoch 루프 안 ...
+
+    # 검증은 항상 순수 지도손실로 — λ 가 바뀌어도 비교 가능해야 한다
+    model.eval()
+    with torch.no_grad():
+        Vm, Va = model(b.X[va])
+        vloss = supervised_loss(model, Vm, Va, b.Vm[va], b.Va[va]).item()
+
+        # select="phys" 면 고르는 기준만 바꾼다. 기록에는 둘 다 남긴다.
+        vphys = float("nan")
+        if cfg.select == "phys":
+            rp, _ = b.physics.residual(
+                Vm, Va, b.p_spec[va], b.q_spec[va], b.outage[va]
+            )
+            vphys = (rp.abs().sum(-1).mean() / val_load).item() * 100.0
+
+    crit = vphys if cfg.select == "phys" else vloss   # <- 여기가 규칙이다
+    sched.step(crit)                                  # LR 스케줄러도 같은 기준으로
+    hist.append({"epoch": ep, "train": tot / n_seen,
+                 "val": vloss, "val_phys": vphys,     # 기록에는 둘 다
+                 "lam": lam, "lr": opt.param_groups[0]["lr"]})
+
+    if crit < best * (1 - 1e-5):        # 되돌릴 가중치를 고르는 것도 같은 기준
+        best, best_epoch = crit, ep
+        best_state = {k: v.detach().clone() for k, v in model.state_dict().items()}
+```
+
+**`crit` 한 줄이 GAT 를 11.52% 에서 4.90% 로 바꿨습니다.** 모델은 그대로입니다 —
+`best_state` 를 언제 저장할지만 달라졌고, 그 결과 epoch 34 대신 1,219 짜리
+가중치가 평가됩니다.
+
+`va` 는 검증 분할의 인덱스이므로 시험 분할은 이 계산에 들어오지 않습니다.
+`sched.step(crit)` 까지 같은 기준으로 바꾼 것도 의도적입니다 — 학습률을 깎는
+판단과 가중치를 되돌리는 판단이 서로 다른 지표를 보면 §7.8 의 악순환이
+그대로 남습니다.
 
 `phys` 는 검증 분할에서만 재므로 시험 분할이 새어 들어가지 않습니다. 학습
 중에는 float32 로(GPU 위에서) 재고, 최종 보고 수치는 §7.5 그대로 float64 · CPU
@@ -967,7 +1215,7 @@ case30 배치 64에서만 CPU가 이기고, 나머지는 전부 GPU입니다. ca
 - [x] **λ 재정규화** — 두 손실 항의 비로 정의 (§3.1)
 - [x] **ΔQ 규명** — 전압 오차가 지배하고, 오차의 *위치*가 관건 (§2.2)
 - [x] **추론 속도 비교** — 단건/배치 분리 (§8)
-- [x] **case118 확대** — 큰 계통에서 신경망이 선형을 20배 이김 (§2.3)
+- [x] **case118 확대** — 20,000 표본에서는 선형이 앞섬 (§2.3)
 - [x] **약점 특정** — 열화가 미지 N-1 표본에만 뭉쳐 있음 (§4.1)
 - [x] **기준선 수치 안정화** — 상수열 제거 + 검증으로 절단선 선택 (§7.6)
 - [x] **표본 수 실측** — case30 은 21,000 에서 선형을 2.4배 이김 (§5.1)
