@@ -335,6 +335,12 @@ $$
 > 가능하면 Bernstein 2017 LP.
 > 기준선을 먼저 구현하고 숫자를 확보해 두면, 신경망이 그보다 못할 때
 > **일찍** 알아챌 수 있습니다.
+>
+> **실제로 그렇게 됐습니다.** 최소제곱 선형 기준선을 먼저 재 뒀더니,
+> case118 에서 선형 0.61% vs MLP 1.14% 로 **신경망이 졌습니다**
+> ([06](06_surrogate_training.md) §5.3). 기준선이 없었으면 한참 뒤에야 알았을
+> 것입니다. 덧붙여 그 기준선 자체가 수치적으로 망가져 있던 적도 있습니다 —
+> **비교 대상도 검증해야 합니다** (§7.6).
 
 ### 6.3 물리 일관성과 점별 정확도는 다른 지표입니다
 
@@ -468,8 +474,10 @@ s.t. NN_θ(x) = 0      ← 조류방정식 대신 학습된 함수
 - [x] `src/nnopf/train.py` — 학습 루프 (시드 고정, 체크포인트, 로그)
 - [x] `physics_residual()` 을 PyTorch로 이식 → `physics_torch.ACPhysics`
       (NumPy 판과 7.9e-15 로 일치하는지 테스트로 고정)
-- [ ] λ 워밍업-램프 스케줄 + λ 민감도 곡선
-- [ ] 학습곡선 실측 → 필요 샘플 수 결정
+- [x] λ 워밍업-램프 스케줄 + λ 민감도 곡선
+      P2 곡선은 재현되지 않았고, λ 를 두 손실 항의 비로 재정의했습니다
+      ([06](06_surrogate_training.md) §3·§3.1)
+- [x] 학습곡선 실측 → 필요 샘플 수 결정 ([06](06_surrogate_training.md) §5)
 
 ### M4
 
@@ -477,8 +485,10 @@ s.t. NN_θ(x) = 0      ← 조류방정식 대신 학습된 함수
       ([06](06_surrogate_training.md) §7.6 에서 수치적으로 확정)
 - [ ] DC 조류계산·고정점 선형화 기준선 추가
 - [x] `scripts/s03_train_surrogate.py`
-- [ ] `scripts/s04_evaluate_surrogate.py` — §6.1 지표표 자동 생성
-- [ ] GAT / PI-GAT (**GPU 필요**)
+- [x] 지표표·그림 자동 생성 — `scripts/s04_plot.py` (그림 5장),
+      `scripts/s03b_topology_breakdown.py` (정상/미지 N-1 분해)
+- [ ] GAT / PI-GAT (**GPU 필요**) — 구현·테스트는 끝났고 아직 MLP 를 못 이깁니다
+      ([06](06_surrogate_training.md) §7.7·§7.8)
 - [x] `results/` 에 설정 JSON + 지표 JSON을 항상 함께 저장
 
 ---
