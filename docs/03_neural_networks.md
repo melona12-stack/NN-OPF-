@@ -62,6 +62,33 @@ $$
 
 `hidden dim 256, 4층` 같은 표현은 "각 층에 뉴런 256개, 층 4개"라는 뜻입니다.
 
+#### 코드로 보면 다섯 줄입니다
+
+위 수식을 PyTorch 로 옮기면 이렇습니다. 우리 코드에서 그대로 쓰는 부분입니다.
+
+```python
+# src/nnopf/models.py — PowerFlowMLP.__init__ 안
+act = _ACT[spec.activation]                      # 활성함수 클래스 (기본 nn.SiLU)
+dims = [layout.in_dim] + [spec.hidden] * spec.layers   # 예: [161, 256, 256, 256]
+
+body = []
+for a, b in zip(dims[:-1], dims[1:]):            # 층을 하나씩 이어 붙인다
+    body += [nn.Linear(a, b), act()]             # W x + b  그리고  δ(·)
+    if spec.dropout > 0:
+        body.append(nn.Dropout(spec.dropout))
+
+body.append(nn.Linear(dims[-1], layout.out_dim)) # 마지막 층엔 활성함수를 안 붙인다
+self.net = nn.Sequential(*body)
+```
+
+**마지막 줄 앞의 `nn.Linear` 에 `act()` 가 없는 것**이 위 수식의
+$y = W_L h_{L-1} + b_L$ 과 정확히 대응합니다. 출력층에 활성함수를 붙이면
+값의 범위가 그 함수에 갇혀 버립니다.
+
+`nn.Linear(a, b)` 하나가 $W$ 와 $b$ 를 함께 들고 있고, 두 값 모두 학습으로
+바뀝니다. `spec.hidden=256, spec.layers=3` 이면 은닉층이 셋, 그 뒤에 출력층
+하나 — 합쳐서 `nn.Linear` 가 네 개입니다.
+
 > [!NOTE] 보편근사 정리 — 왜 이게 통하는가
 > 수학적으로 증명된 사실이 있습니다: **충분히 넓은 은닉층 하나만 있어도
 > 신경망은 임의의 연속함수를 원하는 정밀도로 근사할 수 있습니다.**
@@ -104,6 +131,32 @@ $$
 > 두 번째 항이 **물리정보 신경망(PINN)** 의 핵심입니다. 예측한 전압을 조류방정식에
 > **다시 넣어서** 남는 오차(잔차)를 벌점으로 씁니다. 정답 라벨이 없어도 계산할 수
 > 있는 손실이라는 게 강력한 점입니다. §6.3에서 자세히 다룹니다.
+
+#### 우리 MSE 는 교과서 그대로가 아닙니다 — 표준화 공간에서 잽니다
+
+```python
+# src/nnopf/train.py
+def supervised_loss(model, Vm, Va, Vm_true, Va_true) -> torch.Tensor:
+    """**표준화 공간**의 지도 손실.
+
+    오차를 모선별 학습 표준편차로 나눈 뒤 MSE 를 잰다.
+    """
+    dv = (Vm[:, model.pq_idx] - Vm_true[:, model.pq_idx]) * model.vm_w
+    da = (Va[:, model.va_idx] - Va_true[:, model.va_idx]) * model.va_w
+    return (dv**2).mean() + (da**2).mean()
+```
+
+`model.vm_w` 와 `model.va_w` 는 **학습 분할에서 잰 표준편차의 역수**입니다
+(`vm_w = 1.0 / vm_train.std(0)`). 이 두 줄이 없으면 두 가지가 망가집니다.
+
+| 없으면 | 왜 |
+|---|---|
+| 정규화(weight decay)가 학습을 죽입니다 | 원단위 MSE 가 $10^{-4}$ 규모라 정규화 기울기가 과제 기울기와 맞먹습니다 ([06](06_surrogate_training.md) §7.2) |
+| Va 가 손실을 지배합니다 | 라벨 분산이 Vm 8.1e-05, Va 8.1e-04 로 **10배** 차이입니다 |
+
+`pq_idx` / `va_idx` 로 **예측 대상 모선만** 골라 재는 것도 중요합니다 — 예측하지
+않기로 한 자리(슬랙 θ, PV·슬랙 |V|)는 항상 정확하므로 손실에 넣으면 분모만
+키웁니다 (§5.1).
 
 ### 2.3 ② 역전파 — 사실 여러분은 이미 압니다
 
@@ -277,6 +330,39 @@ $S = V\overline{YV}$ 로 바로 계산합니다.
 > 것이고, 배경 논문들도 전부 이 구조를 따릅니다
 > (→ [07 부록](07_appendix_reference.md) §2).
 
+#### 입력 벡터를 만드는 코드
+
+위 수식의 왼쪽(입력)이 코드에서는 이렇게 생겼습니다.
+
+```python
+# src/nnopf/models.py — IOLayout
+def inputs(self, ds, idx=None) -> np.ndarray:
+    """데이터셋에서 입력 행렬 (N, in_dim) 을 만든다."""
+    sl = slice(None) if idx is None else idx
+
+    # 선로상태: 기본이 전부 1(정상), 고장 난 선로 자리만 0 으로 내린다
+    status = np.ones((len(np.atleast_1d(ds.outage[sl])), self.nl), np.float32)
+    out = np.atleast_1d(ds.outage[sl])
+    hit = np.flatnonzero(out >= 0)          # outage = -1 이면 정상 토폴로지
+    status[hit, out[hit]] = 0.0
+
+    return np.concatenate(
+        [ds.Pd[sl], ds.Qd[sl], ds.p_ren[sl], ds.p_gen[sl], status], axis=1
+    ).astype(np.float32)
+```
+
+case30 이면 `30+30+30+30+41 = 161` 차원입니다.
+
+**여기에 넣지 않은 것이 있습니다.** 노드 특징 8개 중 정적인 4개 — 발전기
+설정전압 `V_set`, 모선종류 원-핫 3개 — 는 빼 두었습니다. MLP 에서는 모선 위치가
+곧 벡터 인덱스라 이 값들이 **모든 표본에서 똑같은 상수 입력**이 되고, 상수는
+정보를 0 비트 줍니다. (그래프 신경망에서는 노드마다 붙여야 하므로 다시 들어옵니다.)
+
+<br>
+
+출력 쪽 계약이 코드 어디에 있는지는 [06 문서](06_surrogate_training.md) §1 에
+`IOLayout.__init__` 과 `PowerFlowMLP.forward` 로 같이 실어 두었습니다.
+
 ### 5.2 표현 방식 — 확정된 것과 남은 것
 
 | 항목 | 후보 A | 후보 B | 결정 |
@@ -286,9 +372,11 @@ $S = V\overline{YV}$ 로 바로 계산합니다.
 | 정규화 | 표준화 | min-max | ✅ **표준화** — 단 선로상태 열은 손대지 않고 상수열은 중심화만 ([06](06_surrogate_training.md) §7.1). 손실도 표준화 공간 (§7.2) |
 | 손실 | MSE | MSE + 물리 잔차 | ✅ **둘 다** — 기준선은 MSE, 본 모델은 PINN |
 
-**전압 출력 요령 하나**: 전압 크기는 **1.0 pu를 더해서** 출력합니다.
+**전압 출력 요령**: P2 는 전압 크기에 **1.0 pu를 더해서** 출력합니다 —
 "정상 운전에서 전압은 1.0 근처"라는 사전지식을 구조에 넣는 것입니다.
-위상은 양·음 모두 가능하므로 그대로 씁니다. (P2의 방식)
+우리는 그 대신 §5.3 의 **스케일링 인자 헤드**를 씁니다. 사전지식을 더 강하게
+넣으면서(범위를 아예 벗어날 수 없게) 같은 효과를 냅니다. 위상은 양·음 모두
+가능하므로 표준화만 하고 그대로 씁니다.
 
 ### 5.3 제약 위반을 구조적으로 0으로 만드는 트릭
 
@@ -310,6 +398,35 @@ $$
 > 때문입니다. 그래서 "계통 전압한계 위반 0%"가 되는 것은 아닙니다
 > ([06 문서](06_surrogate_training.md) §2.3·§4).
 > 발전출력·선로조류 상한/하한에도 똑같이 적용됩니다.
+
+#### 구현은 정말 두 곳입니다
+
+**① 박스를 정하는 곳** — 학습 분할의 라벨 범위에 여유를 더합니다.
+
+```python
+# src/nnopf/train.py — prepare() 안
+vm_tr = ds.Vm[tr][:, layout.pq]        # 학습 분할의, PQ 모선 전압 라벨만
+
+if spec.vm_head == "scaled":
+    lo, hi = vm_tr.min(0), vm_tr.max(0)                  # 모선별 실제 라벨 범위
+    pad = np.maximum((hi - lo) * spec.vm_margin, 1e-3)   # 기본 여유 5%
+    vm_lo, vm_hi = lo - pad, hi + pad
+```
+
+`tr` 로 잘라 낸 것이 핵심입니다 — 검증·시험 라벨을 보고 박스를 정하면 성능이
+부풀려집니다 (§3.2).
+
+**② 씌우는 곳** — 한 줄입니다.
+
+```python
+# src/nnopf/models.py — PowerFlowMLP.forward
+if self.spec.vm_head == "scaled":
+    vm = self.vm_lo + torch.sigmoid(vm_raw) * (self.vm_hi - self.vm_lo)
+```
+
+`torch.sigmoid` 의 치역이 $(0, 1)$ 이므로 `vm` 은 `vm_lo` 와 `vm_hi` 사이를
+**수학적으로 벗어날 수 없습니다.** 손실로 유도하는 것이 아니라 구조로 막는
+것이라, 학습이 아무리 나빠도 이 성질은 유지됩니다.
 
 ---
 
