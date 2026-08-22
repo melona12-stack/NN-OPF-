@@ -74,22 +74,32 @@
 
 pandapower 는 `runpp` 를 돌리고 나면 **자기가 실제로 쓴 행렬**을
 `net._ppc["internal"]["Ybus"]` 에 남깁니다. 그걸 그대로 꺼내 비교합니다.
+아래가 테스트 전체입니다 — 잘라낸 부분이 없습니다.
 
 ```python
-# tests/test_nnopf.py::test_ybus_matches_pandapower
-import pandapower as pp, pandapower.networks as pn
+# tests/test_nnopf.py
+PF_CASES = ["case9", "case14", "case30", "case57", "case118"]
 
-sysm = load_case(name)          # 우리 구현
-net  = getattr(pn, name)()
-pp.runpp(net, numba=False)      # 이걸 돌려야 내부 Ybus 가 채워진다
+@pytest.mark.parametrize("name", PF_CASES)     # 계통 5개를 각각 한 번씩 돌린다
+def test_ybus_matches_pandapower(name):
+    """Ybus 가 pandapower 내부 Ybus 와 정확히 일치해야 한다."""
+    import pandapower as pp
+    import pandapower.networks as pn
 
-ref = net._ppc["internal"]["Ybus"].toarray()
-assert np.max(np.abs(sysm.ybus().toarray() - ref)) == 0.0
+    sysm = load_case(name)        # 우리 구현으로 계통을 읽는다
+    net = getattr(pn, name)()     # 같은 계통을 pandapower 로도 읽는다
+    pp.runpp(net, numba=False)    # 이걸 돌려야 net._ppc 에 내부 Ybus 가 채워진다
+
+    ref = net._ppc["internal"]["Ybus"].toarray()          # 저쪽이 실제로 쓴 행렬
+    assert np.max(np.abs(sysm.ybus().toarray() - ref)) == 0.0
 ```
 
-마지막 줄에 **허용오차가 없습니다.** 같은 입력에 같은 공식을 쓰면 부동소수점
-연산 순서까지 같아서 비트 단위로 일치해야 하고, 실제로 그렇습니다.
-`< 1e-12` 같은 여유를 두면 진짜 어긋난 항을 놓칩니다 — §3.2 가 그 예입니다.
+**마지막 줄 하나만 보시면 됩니다.** 두 행렬의 원소별 차이 중 최댓값이 `0.0` 이어야
+한다 — **허용오차가 없습니다.**
+
+같은 입력에 같은 공식을 쓰면 부동소수점 연산 순서까지 같아서 비트 단위로 일치해야
+하고, 실제로 그렇습니다. `< 1e-12` 같은 여유를 뒀다면 §3.2 의 변압기 철손 버그
+(오차 2.1e-4)를 그냥 통과시켰을 것입니다.
 
 ### 3.1 결과
 
@@ -148,34 +158,83 @@ def _col(idx):
 
 ### 4.0 검증 코드
 
-전압으로 한 번, **모선 주입전력으로 또 한 번** 대조합니다. 전압만 보면
-발전기 매핑이 어긋난 경우를 놓치기 때문입니다.
+`compare_power_flow(case)` 는 계통 이름 하나를 받아 **비교 리포트**를 돌려줍니다.
+전압으로 한 번, **모선 주입전력으로 또 한 번** 대조합니다 — 전압만 보면 발전기
+매핑이 어긋난 경우를 놓치기 때문입니다.
+
+먼저 위상각 빼기에 쓰는 작은 도우미 하나입니다.
 
 ```python
-# src/nnopf/compare.py::compare_power_flow
-pp.runpp(net, numba=False, tolerance_mva=1e-10)   # 저쪽 허용오차를 우리보다 조인다
-mine = solve_power_flow(sysm, tol=1e-11)
-
-d_vm = np.max(np.abs(mine.Vm - net.res_bus.vm_pu.to_numpy()))
-d_va = np.max(np.abs(_angle_diff(
-    mine.Va, np.deg2rad(net.res_bus.va_degree.to_numpy()))))
-
-# 주입전력은 회계 규약을 먼저 맞춰야 한다 (§4.3 에서 겪은 함정)
-#   우리   S = V * conj(Ybus @ V)  -> 병렬 소자가 Ybus 안에 있어 제외된다
-#   저쪽   res_bus.p_mw           -> 그 모선의 모든 요소 합 (병렬 소자 포함)
-S     = mine.V * np.conj(sysm.ybus() @ mine.V)
-S_sh  = np.abs(mine.V) ** 2 * np.conj(sysm.Gs + 1j * sysm.Bs)
-S_src = S - S_sh                                  # 축을 맞춘 뒤에 비교한다
-
-d_p = np.max(np.abs(np.real(S_src) - ref_p))
-d_q = np.max(np.abs(np.imag(S_src) - ref_q))
+# src/nnopf/compare.py
+def _angle_diff(a: np.ndarray, b: np.ndarray) -> np.ndarray:
+    """위상각 차이를 (-pi, pi] 로 감아서 계산한다."""
+    d = a - b
+    return (d + np.pi) % (2 * np.pi) - np.pi
 ```
 
-`tolerance_mva=1e-10` 이 중요합니다. 기본값으로 두면 pandapower 쪽이 덜 수렴한
-상태라, 남는 차이가 **우리 오차인지 저쪽 오차인지 구분되지 않습니다.**
+위상은 $2\pi$ 주기라 $-\pi$ 와 $+\pi$ 가 같은 각인데, 그냥 빼면 $2\pi$ 차이로
+보입니다. 그래서 감아서 빼야 합니다.
 
-`_angle_diff` 로 위상을 빼는 것도 이유가 있습니다. 위상은 $2\pi$ 주기라
-$-\pi$ 와 $+\pi$ 는 같은 각인데, 그냥 빼면 $2\pi$ 차이로 보입니다.
+본체입니다. 이것도 함수 전체입니다.
+
+```python
+# src/nnopf/compare.py
+def compare_power_flow(case: str = "case9", tol: float = 1e-6) -> ComparisonReport:
+    """뉴턴-랩슨 조류계산을 pandapower ``runpp`` 와 비교한다."""
+    import pandapower as pp
+
+    sysm = load_case(case)                   # 우리 계통 데이터
+    net = load_pandapower_net(case)          # 같은 계통, pandapower 쪽
+    pp.runpp(net, numba=False, tolerance_mva=1e-10)   # 저쪽을 우리보다 조인다
+
+    mine = solve_power_flow(sysm, tol=1e-11)          # 우리 뉴턴-랩슨
+
+    # --- (1) 전압으로 비교 ------------------------------------------------
+    ref_vm = net.res_bus.vm_pu.to_numpy()
+    ref_va = np.deg2rad(net.res_bus.va_degree.to_numpy())   # deg -> rad
+
+    d_vm = float(np.max(np.abs(mine.Vm - ref_vm)))
+    d_va = float(np.max(np.abs(_angle_diff(mine.Va, ref_va))))
+
+    # --- (2) 주입전력으로 한 번 더 ----------------------------------------
+    # 축을 먼저 맞춰야 한다 (§4.3 에서 겪은 함정).
+    #   우리 S = V * conj(Ybus V)  -> 병렬 소자는 Ybus 안에 있으므로 제외된다
+    #   저쪽 res_bus.p_mw          -> 그 모선에 붙은 모든 요소의 합, 부호도 반대
+    ref_p = -net.res_bus.p_mw.to_numpy() / sysm.base_mva    # 소비(+) -> 주입(+)
+    ref_q = -net.res_bus.q_mvar.to_numpy() / sysm.base_mva
+
+    Ybus  = sysm.ybus()
+    S     = mine.V * np.conj(Ybus @ mine.V)                  # 총 주입
+    S_sh  = np.abs(mine.V) ** 2 * np.conj(sysm.Gs + 1j * sysm.Bs)   # 병렬 소자 몫
+    S_src = S - S_sh                                         # 외부 소스의 순주입
+
+    d_p = float(np.max(np.abs(np.real(S_src) - ref_p)))
+    d_q = float(np.max(np.abs(np.imag(S_src) - ref_q)))
+
+    # --- (3) 판정 ---------------------------------------------------------
+    metrics = {
+        "max |dVm| [pu]":   d_vm,
+        "max |dVa| [rad]":  d_va,
+        "max |dP_bus| [pu]": d_p,
+        "max |dQ_bus| [pu]": d_q,
+        "my mismatch [pu]": mine.max_mismatch,
+        "iterations":       float(mine.iterations),
+    }
+    notes = []
+    if not mine.converged:
+        notes.append("직접 구현 조류계산이 수렴하지 않았습니다.")
+
+    ok = mine.converged and max(d_vm, d_va, d_p, d_q) < tol
+    return ComparisonReport(case, "pf", ok, metrics, notes)
+```
+
+**세 곳만 보시면 됩니다.**
+
+| 줄 | 무엇이 중요한가 |
+|---|---|
+| `tolerance_mva=1e-10` | 기본값으로 두면 pandapower 쪽이 덜 수렴한 상태라, 남는 차이가 **우리 오차인지 저쪽 오차인지 구분되지 않습니다** |
+| `ref_p = -net.res_bus.p_mw...` | 저쪽은 **소비(+)** 기준, 우리는 **주입(+)** 기준이라 부호를 뒤집습니다 |
+| `S_src = S - S_sh` | 병렬 소자 몫을 빼서 **같은 것끼리** 비교합니다. 이걸 안 했을 때 case14 에서 0.21 pu 가 남았고, 그 값이 정확히 그 계통의 병렬 커패시터 용량이었습니다 |
 
 ### 4.1 결과
 
@@ -255,20 +314,77 @@ S_src = S - S_sh          # 축을 맞춘 뒤 비교
 
 ### 5.0 검증 코드
 
-OPF 는 **해가 여러 개일 수 있습니다.** 그래서 판정 기준을 둘로 나눕니다 —
-실행가능성과 목적함수 값만 불합격 사유로 삼고, 전압 프로파일은 경고로만 봅니다.
+`compare_opf(case)` 도 구조는 같습니다. 다만 **OPF 는 해가 여러 개일 수 있어서**
+판정 기준을 둘로 나눕니다 — 실행가능성과 목적함수 값만 불합격 사유로 삼고,
+전압 프로파일은 경고로만 남깁니다.
 
 ```python
-# src/nnopf/compare.py::compare_opf
-mine = solve_acopf(sysm)
-rel_cost = abs(mine.cost - ref_cost) / max(abs(ref_cost), 1e-9)
+# src/nnopf/compare.py
+def compare_opf(case: str = "case9", tol_cost_rel: float = 1e-6,
+                tol_vm: float = 1e-4, enforce_line_limits: bool = False,
+                method: str = "SLSQP") -> ComparisonReport:
+    """AC-OPF 를 pandapower ``runopp`` 와 비교한다."""
+    import pandapower as pp
 
-feasible = mine.max_eq_violation < 1e-6     # 조류방정식을 만족하는가
-ok = feasible and rel_cost < 1e-6           # 합격은 이 둘로만 판정한다
+    sysm = load_case(case)
+    net = load_pandapower_net(case)
 
-if rel_cost < 1e-6 and d_vm >= 1e-4:        # 비용은 같은데 전압만 다르면
-    notes.append("최적해가 평평할 수 있습니다")   # 불합격이 아니라 경고
+    if not enforce_line_limits:
+        # 양쪽 모두 선로 한계를 걸지 않도록 맞춘다 — 설정이 다르면 비교가 무의미
+        for tbl in ("line", "trafo", "trafo3w"):
+            if tbl in net and "max_loading_percent" in net[tbl]:
+                net[tbl]["max_loading_percent"] = np.nan
+
+    # --- (1) 기준값 얻기 --------------------------------------------------
+    # pandapower 내부 IPM 은 초기치에 민감해서 한 번에 실패하는 경우가 있다.
+    # 초기치를 바꿔 가며 세 번 시도한다.
+    notes: list[str] = []
+    ref_cost = ref_vm = None
+    for kwargs in ({}, {"init": "flat"}, {"init": "pf"}):
+        try:
+            pp.runopp(net, numba=False, **kwargs)
+            ref_cost = float(net.res_cost)
+            ref_vm = net.res_bus.vm_pu.to_numpy()
+            break
+        except Exception:
+            net = load_pandapower_net(case)      # 실패하면 깨끗한 상태로 되돌린다
+
+    if ref_cost is None:
+        return ComparisonReport(case, "opf", False, {},
+                                ["pandapower runopp 실패(모든 초기치)"])
+
+    # --- (2) 우리 해와 비교 -----------------------------------------------
+    mine = solve_acopf(sysm, enforce_line_limits=enforce_line_limits, method=method)
+
+    d_cost   = abs(mine.cost - ref_cost)
+    rel_cost = d_cost / max(abs(ref_cost), 1e-9)
+    d_vm     = float(np.max(np.abs(mine.Vm - ref_vm)))
+
+    metrics = {
+        "my cost":          mine.cost,
+        "pandapower cost":  ref_cost,
+        "rel cost diff":    rel_cost,
+        "max |dVm| [pu]":   d_vm,
+        "eq residual [pu]": mine.max_eq_violation,
+        "solve time [s]":   mine.solve_time,
+    }
+
+    # --- (3) 판정 ---------------------------------------------------------
+    feasible = mine.max_eq_violation < 1e-6     # 조류방정식을 만족하는가
+
+    if rel_cost >= tol_cost_rel:
+        notes.append("비용이 다릅니다 — 제약 설정이 어긋났을 가능성이 큽니다.")
+    elif d_vm >= tol_vm:
+        # 비용은 같은데 전압만 다르다 -> 불합격이 아니라 경고
+        notes.append(f"비용은 같은데 전압이 {d_vm:.2e} pu 다릅니다 "
+                     "— 최적해가 평평할 수 있습니다.")
+
+    ok = feasible and rel_cost < tol_cost_rel   # 합격은 이 둘로만 판정한다
+    return ComparisonReport(case, "opf", ok, metrics, notes)
 ```
+
+**마지막 줄이 핵심입니다.** `ok = feasible and rel_cost < tol_cost_rel` —
+전압 차이 `d_vm` 은 `ok` 계산에 **들어가지 않습니다.** 왜 그런지는 §5.2 에 있습니다.
 
 ### 5.1 결과
 
@@ -305,16 +421,29 @@ OPF 해의 (Pg, Vm_gen)  ──►  뉴턴-랩슨에 다시 투입  ──►  �
 ```
 
 ```python
-# tests/test_nnopf.py::test_opf_solution_is_a_true_power_flow_solution
-opt = solve_acopf(sysm)
-assert opt.max_eq_violation < 1e-6          # ① OPF 스스로는 만족한다고 말한다
+# tests/test_nnopf.py
+@pytest.mark.parametrize("name", ["case9", "case30"])
+def test_opf_solution_is_a_true_power_flow_solution(name):
+    """OPF 해의 발전 지령을 조류계산에 다시 넣으면 같은 전압이 나와야 한다."""
+    sysm = load_case(name)
+    opt = solve_acopf(sysm)
 
-# ② 그 발전 지령을 진짜 조류계산에 다시 넣는다
-pf = solve_power_flow(sysm, Pg=opt.Pg,
-                      Vm_set=opt.Vm[sysm.gen_bus], tol=1e-11)
-assert pf.converged
-assert np.max(np.abs(pf.Vm - opt.Vm)) < 1e-6   # ③ 같은 전압이 나오는가
+    # ① OPF 스스로는 "제약을 만족한다"고 말한다
+    assert opt.max_eq_violation < 1e-6
+
+    # ② 그 발전 지령을 진짜 조류계산에 다시 넣는다
+    #    Pg 는 OPF 가 정한 발전량, Vm_set 은 발전기 모선의 전압 지정값
+    pf = solve_power_flow(sysm, Pg=opt.Pg,
+                          Vm_set=opt.Vm[sysm.gen_bus], tol=1e-11)
+
+    # ③ 같은 전압이 나오는가 — 여기가 진짜 판정이다
+    assert pf.converged
+    assert np.max(np.abs(pf.Vm - opt.Vm)) < 1e-6
 ```
+
+**① 과 ③ 이 다른 질문입니다.** ① 은 OPF 가 *자기 근사 기준으로* 만족한다는
+자기신고이고, ③ 은 *독립적으로 돌린 뉴턴-랩슨* 이 같은 답을 내는지입니다.
+대체모델을 넣으면 ① 은 통과하고 ③ 이 깨지는 일이 생깁니다 — 그게 아래 경고입니다.
 
 case9, case30에서 전압 차이 $< 10^{-6}$ 을 확인했습니다.
 
