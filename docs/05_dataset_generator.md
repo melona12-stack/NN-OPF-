@@ -230,17 +230,47 @@ case300에서 재생에너지 비중을 낮춰 봤더니 **표본 100%가 발산
 비례해 재배분**합니다. 실제 급전이 하는 일과 같고, 몇 번만 돌면 수렴합니다.
 
 ```python
-alloc = np.clip(target * w * jitter, pmin, pmax)
-for _ in range(max_iter):
-    gap = target - float(alloc.sum())
-    if abs(gap) < 1e-10:
-        break
-    headroom = (pmax - alloc) if gap > 0 else (alloc - pmin)
-    total = float(headroom.sum())
-    if total < 1e-12:
-        break
-    alloc = np.clip(alloc + gap * headroom / total, pmin, pmax)
+# src/nnopf/dataset.py
+def allocate_dispatch(
+    target: float,          # 채워야 할 총 발전량 [MW] = 총부하 + 손실 추정 - 재생E
+    pmin: np.ndarray,       # 발전기별 출력 하한
+    pmax: np.ndarray,       # 발전기별 출력 상한
+    weight: np.ndarray,     # 배분 가중치 (보통 pmax 에 비례)
+    jitter: np.ndarray,     # 표본마다 다르게 흔드는 난수 (1.0 근처)
+    max_iter: int = 30,
+) -> np.ndarray:
+    """목표 발전량 target 을 출력 한계를 지키며 발전기에 배분한다."""
+    if pmax.size == 0:
+        return np.array([])
+
+    # ① 가중치를 정규화하고 비례 배분한 뒤 한계로 자른다 (여기까지가 원래 코드)
+    w = weight / weight.sum() if weight.sum() > 0 else np.full(pmax.size, 1.0 / pmax.size)
+    alloc = np.clip(target * w * jitter, pmin, pmax)
+
+    # ② 자르면서 잃어버린 몫을 여유용량에 비례해 다시 나눈다 (추가한 부분)
+    for _ in range(max_iter):
+        gap = target - float(alloc.sum())      # 아직 모자란(또는 남는) 양
+        if abs(gap) < 1e-10:
+            break                              # 다 채웠다
+
+        # 더 낼 수 있는 여유. 모자라면 위쪽 여유, 남으면 아래쪽 여유를 본다
+        headroom = (pmax - alloc) if gap > 0 else (alloc - pmin)
+        total = float(headroom.sum())
+        if total < 1e-12:
+            break                              # 더 줄 곳도 뺄 곳도 없다 -> 슬랙이 받는다
+
+        alloc = np.clip(alloc + gap * headroom / total, pmin, pmax)
+
+    return alloc
 ```
+
+**②의 for 루프가 추가한 전부입니다.** `np.clip` 한 번으로 끝내면 잘려 나간 몫이
+갈 곳이 없어 슬랙 모선 하나로 전부 떨어집니다. 여유용량에 비례해 다시 나누면
+**여유가 있는 발전기들이 나눠 받습니다** — 실제 급전이 하는 일과 같습니다.
+
+`break` 가 세 군데인 것도 의도적입니다. 마지막 `total < 1e-12` 는 **용량이
+정말로 모자란 경우**로, 이때는 전 발전기가 상한에 붙은 채 끝나고 잔여는 슬랙이
+받습니다. 그래서 그 상황은 아래 ②번 사전 점검으로 걸러야 합니다.
 
 **② `check_capacity_feasible()`** — 용량이 모자란 설정은 **데이터를 만들기 전에**
 원인과 대안을 알려주며 막습니다.
@@ -283,13 +313,50 @@ case300: 발전 용량이 부족해 사실상 전 표본이 발산합니다
 | **슬랙** | **없음** | P, Q 모두 종속변수 |
 
 ```python
-P_sp = p_gen + p_ren - Pd
-Q_sp = -Qd
-dP[non_slack] = P_sp[non_slack] - np.real(S_calc)[non_slack]
-dQ[pq]        = Q_sp[pq]        - np.imag(S_calc)[pq]
+# src/nnopf/dataset.py
+def physics_residual(sys, Pd, Qd, p_ren, p_gen, Vm, Va,
+                     outage: int = -1, Ybus=None):
+    """조류방정식 잔차 (ΔP, ΔQ) 를 모선 종류를 구분해 계산한다."""
+
+    # ① N-1 이면 그 선로만 끊은 Ybus 를 쓴다
+    if outage >= 0:
+        status = sys.br_status.copy()
+        status[outage] = 0
+        sys = dataclasses.replace(sys, br_status=status)
+    if Ybus is None:
+        Ybus = make_ybus(sys)
+
+    # ② 주어진 전압에서 실제로 흐르는 주입전력을 계산한다
+    V = np.asarray(Vm, float) * np.exp(1j * np.asarray(Va, float))
+    S_calc = V * np.conj(Ybus @ V)          # S = V ⊙ conj(Ybus V)
+
+    # ③ 지정값. 병렬 소자는 여기 넣지 않는다 — Ybus 대각에 이미 있다
+    P_sp = np.asarray(p_gen, float) + np.asarray(p_ren, float) - np.asarray(Pd, float)
+    Q_sp = -np.asarray(Qd, float)
+
+    # ④ 지정값이 있는 자리에만 잔차를 건다. 나머지는 0 으로 남긴다
+    dP = np.zeros(sys.nb)
+    dQ = np.zeros(sys.nb)
+    non_slack = sys.bus_type != SLACK       # 슬랙은 P 도 종속변수
+    pq = sys.bus_type == PQ                 # PV 는 Q 가 종속변수
+
+    dP[non_slack] = P_sp[non_slack] - np.real(S_calc)[non_slack]
+    dQ[pq]        = Q_sp[pq]        - np.imag(S_calc)[pq]
+
+    return dP, dQ
 ```
 
+**④의 두 줄이 위 표를 그대로 코드로 옮긴 것입니다.**
+
+| 코드 | 뜻 |
+|---|---|
+| `dP[non_slack] = ...` | 슬랙을 뺀 모든 모선에 $\Delta P$ — 슬랙 P 는 조류방정식이 정하므로 지정값이 없습니다 |
+| `dQ[pq] = ...` | PQ 모선에만 $\Delta Q$ — PV 는 발전기가 Q 를 알아서 내므로 지정값이 없습니다 |
+| 나머지 자리 | `np.zeros` 그대로 **0** — 잔차를 걸지 않는다는 뜻입니다 |
+
 이 구분을 놓치고 모든 모선에 잔차를 걸면 학습이 잘못된 방향으로 갑니다.
+슬랙에 $\Delta P$ 를 걸면 "네가 정할 값이 아닌 것을 맞히라"고 요구하는 셈이고,
+그 벌점이 다른 모선의 전압을 왜곡시킵니다.
 
 > [!TIP] 4단계에서 실제로 그렇게 옮겼습니다 — `physics_torch.ACPhysics`
 > 모선 종류별로 잘라 쓰는 구조를 이미 NumPy로 맞춰 놓았으므로,
