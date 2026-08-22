@@ -167,7 +167,7 @@
       "problemMatcher": []
     },
     {
-      "label": "24. 검사 — 회귀 테스트 전체 82개 (30분)",
+      "label": "24. 검사 — 회귀 테스트 전체 84개 (30분)",
       "type": "shell",
       "command": "${workspaceFolder}/.venv/Scripts/python.exe -m pytest tests/ -q",
       "problemMatcher": [],
