@@ -110,7 +110,7 @@ def _merge_quotes(lines: list[str]) -> list[str]:
             head = alert.group(2).strip()
             body = ([f"**{head}**"] if head else []) + buf[1:]
             out.append(f'<callout icon="{icon}" color="{color}">')
-            out.extend("\t" + ln for ln in body)
+            out.extend("\t" + ln for ln in _join_open_bold(body))
             out.append("</callout>")
         else:
             out.append("> " + "<br>".join(buf))
@@ -131,6 +131,38 @@ def _merge_quotes(lines: list[str]) -> list[str]:
 
 
 _INLINE_MATH_RE = re.compile(r"(?<!\$)\$(?!\$)((?:\\.|[^$\\])+?)(?<!\\)\$(?!\$)")
+
+
+def _join_open_bold(body: list[str]) -> list[str]:
+    """콜아웃 본문에서 **굵게**가 줄바꿈을 넘는 줄을 다음 줄과 이어 붙인다.
+
+    Notion 은 콜아웃 안에서 ``**`` 가 줄을 넘어가면 굵게로 인식하지 못하고
+    별표를 엉뚱한 자리에 그대로 남긴다. 예를 들어
+
+        **끼워 넣는 자리는 완전히
+        동일합니다.** 그래서 ...
+
+    가 ``동일합니다.** 그래서 ... **계약서`` 처럼 깨진다. 원본 마크다운은
+    읽기 좋게 80자에서 줄을 접으므로 이런 경우가 계속 생긴다.
+
+    Notion 은 어차피 알아서 줄바꿈하므로, **별표가 안 닫힌 줄만** 다음 줄과
+    합쳐 준다. 표·코드블록 같은 구조 줄은 건드리지 않는다.
+    """
+    STRUCT = ("<", "```", "|", "$$")
+    out: list[str] = []
+    i = 0
+    while i < len(body):
+        line = body[i]
+        # 별표 개수가 홀수면 굵게가 이 줄에서 안 닫혔다는 뜻
+        while (line.count("**") % 2 == 1 and i + 1 < len(body)
+               and body[i + 1].strip()
+               and not body[i + 1].lstrip().startswith(STRUCT)
+               and not line.lstrip().startswith(STRUCT)):
+            i += 1
+            line = line.rstrip() + " " + body[i].lstrip()
+        out.append(line)
+        i += 1
+    return out
 
 
 def _convert_inline_math(text: str) -> str:
