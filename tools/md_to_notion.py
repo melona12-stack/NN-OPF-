@@ -62,33 +62,53 @@ def _is_separator(line: str) -> bool:
     return bool(_SEP_RE.match(line)) and "-" in line
 
 
+def _quote_prefix(line: str) -> tuple[str, str]:
+    """``> `` 인용 접두사를 떼어 ``(접두사, 나머지)`` 로 나눈다."""
+    if line.startswith("> "):
+        return "> ", line[2:]
+    if line.rstrip() == ">":
+        return "> ", ""
+    return "", line
+
+
 def _convert_tables(lines: list[str]) -> list[str]:
-    """파이프 표를 Notion ``<table>`` XML 로 바꾼다."""
+    """파이프 표를 Notion ``<table>`` XML 로 바꾼다.
+
+    **콜아웃(``> [!NOTE]``) 안의 표도 바꾼다.** 이 함수는 ``_merge_quotes``
+    보다 먼저 도는데, 그 시점에는 콜아웃 본문이 아직 ``> `` 접두사를 달고
+    있다. 접두사를 못 보고 지나치면 파이프 표가 그대로 남고, Notion 은
+    파이프 표를 렌더링하지 않아 ``| a | b |`` 가 날것으로 보인다.
+    그래서 접두사를 떼고 판정한 뒤 결과에 다시 붙인다.
+    """
     out: list[str] = []
     i = 0
     while i < len(lines):
-        line = lines[i]
-        is_row = line.strip().startswith("|") and line.strip().endswith("|")
-        if is_row and i + 1 < len(lines) and _is_separator(lines[i + 1]):
-            header = _split_table_row(line)
+        pre, body = _quote_prefix(lines[i])
+        is_row = body.strip().startswith("|") and body.strip().endswith("|")
+        nxt_pre, nxt_body = (
+            _quote_prefix(lines[i + 1]) if i + 1 < len(lines) else ("", "")
+        )
+        if is_row and nxt_pre == pre and _is_separator(nxt_body):
+            header = _split_table_row(body)
             i += 2
             rows = []
             while i < len(lines):
-                nxt = lines[i].strip()
-                if not (nxt.startswith("|") and nxt.endswith("|")):
+                p2, b2 = _quote_prefix(lines[i])
+                t = b2.strip()
+                if p2 != pre or not (t.startswith("|") and t.endswith("|")):
                     break
-                rows.append(_split_table_row(lines[i]))
+                rows.append(_split_table_row(b2))
                 i += 1
-            out.append('<table fit-page-width="true" header-row="true">')
+            out.append(pre + '<table fit-page-width="true" header-row="true">')
             for cells in [header] + rows:
                 padded = cells + [""] * (len(header) - len(cells))
-                out.append("\t<tr>")
+                out.append(pre + "\t<tr>")
                 for c in padded[: len(header)]:
-                    out.append(f"\t\t<td>{c}</td>")
-                out.append("\t</tr>")
-            out.append("</table>")
+                    out.append(pre + f"\t\t<td>{c}</td>")
+                out.append(pre + "\t</tr>")
+            out.append(pre + "</table>")
             continue
-        out.append(line)
+        out.append(lines[i])
         i += 1
     return out
 
