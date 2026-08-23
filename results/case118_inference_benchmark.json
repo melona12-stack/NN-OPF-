@@ -1,0 +1,66 @@
+{
+  "case": "case118",
+  "model": "mlp",
+  "hidden": 256,
+  "layers": 4,
+  "n_samples": 60000,
+  "split": "unseen-n1",
+  "n_test": 9098,
+  "n_single": 200,
+  "rows": [
+    {
+      "nr_ms": 4.120686577165018,
+      "single_ms": 0.19381699999939883,
+      "batch_ms": 0.008066633063941892,
+      "speedup_single": 21.260707663299915,
+      "speedup_batch": 510.8310424561914,
+      "batch_size": 64,
+      "device": "CPU"
+    },
+    {
+      "nr_ms": 4.14285033555692,
+      "single_ms": 0.15606100001605228,
+      "batch_ms": 0.004584486605706063,
+      "speedup_single": 26.546352612957694,
+      "speedup_batch": 903.667235149196,
+      "batch_size": 256,
+      "device": "CPU"
+    },
+    {
+      "nr_ms": 4.150569127533107,
+      "single_ms": 0.18182449999585515,
+      "batch_ms": 0.0038978515632948074,
+      "speedup_single": 22.82733695199339,
+      "speedup_batch": 1064.8350918793533,
+      "batch_size": 1024,
+      "device": "CPU"
+    },
+    {
+      "nr_ms": 4.3450416107357315,
+      "single_ms": 1.3426555000114604,
+      "batch_ms": 0.023827822580583857,
+      "speedup_single": 3.2361552242542064,
+      "speedup_batch": 182.3516016220591,
+      "batch_size": 64,
+      "device": "NVIDIA GeForce RTX 5060"
+    },
+    {
+      "nr_ms": 4.327283221468464,
+      "single_ms": 1.3008964999971795,
+      "batch_ms": 0.005470926339512516,
+      "speedup_single": 3.3263854745384016,
+      "speedup_batch": 790.9598764318299,
+      "batch_size": 256,
+      "device": "NVIDIA GeForce RTX 5060"
+    },
+    {
+      "nr_ms": 4.425281879195987,
+      "single_ms": 1.2340274999951362,
+      "batch_ms": 0.0005219726588734375,
+      "speedup_single": 3.586048025034636,
+      "speedup_batch": 8477.995550086818,
+      "batch_size": 1024,
+      "device": "NVIDIA GeForce RTX 5060"
+    }
+  ]
+}
