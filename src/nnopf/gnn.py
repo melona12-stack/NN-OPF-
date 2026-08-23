@@ -74,6 +74,19 @@ class GATSpec:
     node_id: int = 16            # 모선별 학습 임베딩 차원 (0 이면 끔)
     agg: str = "softmax"         # "softmax" = GAT · "sum" = 어드미턴스 가중 합
 
+    # 층마다 활성값을 들고 있지 않고 역전파 때 다시 계산한다.
+    #
+    # 어텐션 한 층이 붙들고 있는 간선 텐서 ``(B, E, H, D)`` 는 case118 에서
+    # 한 개에 128 MB(B=256, E=490, H=4, D=64)이고, 층 하나가 그런 걸 대여섯 개
+    # 만든다. 18층이면 활성값만 **11.6 GB** — RTX 5060 의 8 GB 에 안 들어간다.
+    #
+    # 켜면 층의 입력 ``(B, N, dim)`` 만 남기므로 18층이 557 MB 로 내려간다.
+    # 대신 역전파에서 순전파를 한 번 더 돌아 계산이 약 1/3 늘어난다.
+    # 그 대가가 남는 이유는, 지금 느린 원인이 계산이 아니라 **할당기가
+    # 한계선에서 캐시를 비웠다 다시 잡기를 반복하는 것**이기 때문이다
+    # (06 문서 §8.2 — 연산량으로는 epoch 당 40초인데 실측이 189초였다).
+    checkpoint: bool = False
+
 
 class EdgeGAT(nn.Module):
     r"""엣지 특징을 쓰는 어텐션 한 층.
@@ -281,8 +294,18 @@ class PowerFlowGAT(nn.Module):
         node, ea, alive = self._unfold(z)
 
         h = self.enc(node)
+        ckpt = self.spec.checkpoint and self.training and torch.is_grad_enabled()
         for blk in self.blocks:
-            h = self.drop(blk(h, self.edge_index, ea, alive))
+            if ckpt:
+                # use_reentrant=False 라야 LayerNorm·dropout 이 있는 블록에서
+                # 안전하다. 재진입 방식은 입력에 requires_grad 가 없으면
+                # 기울기를 조용히 끊어 먹는다.
+                h = torch.utils.checkpoint.checkpoint(
+                    blk, h, self.edge_index, ea, alive, use_reentrant=False
+                )
+            else:
+                h = blk(h, self.edge_index, ea, alive)
+            h = self.drop(h)
 
         out = torch.einsum("bnd,ndk->bnk", h, self.head_w) + self.head_b
         vm_raw = out[:, self.pq_idx, 0]

@@ -18,6 +18,7 @@ case118 기준 4.6e-05 까지 올라온다 (05 문서 §6.1). 학습은 float32,
 
 from __future__ import annotations
 
+import contextlib
 import json
 import time
 from dataclasses import asdict, dataclass, field
@@ -100,6 +101,25 @@ class TrainConfig:
     # "위상은 더 정확한데 물리 잔차는 더 나쁘다"가 세 실험에서 반복됐다.
     jac_alpha: float = 0.0
 
+    # 검증을 한 번에 몇 표본씩 볼 것인가. **0 이면 batch 와 같게 쓴다.**
+    #
+    # 예전에는 검증 분할 전체를 한 방에 넣었다. MLP 에서는 아무 문제가
+    # 없었지만 GAT 에서는 치명적이다 — case118 미지 N-1 의 검증 분할이
+    # 9,000 표본이고, 간선 텐서 ``(B, E, H, D)`` 가 그 크기면 **한 개에
+    # 4.5 GB** 다. 동시에 대여섯 개가 살아 있으니 22 GB 를 요구한다.
+    # 8 GB 카드에서 이게 매 epoch 반복되면 할당기가 계속 캐시를 비운다.
+    # 학습 배치가 들어가는 크기면 검증도 들어간다 — 그래서 기본이 batch 다.
+    val_chunk: int = 0
+
+    # 학습 순전파를 반정밀도로 돌린다. "off" | "bf16" | "fp16".
+    #
+    # 간선 텐서가 절반이 되므로 GAT 의 활성값이 그대로 절반이 된다.
+    # **손실 계산은 항상 float32 로 되돌린 뒤에 한다** — 물리 잔차는 전압
+    # 오차가 max|Y| 배로 증폭되는 양이라 bf16(유효숫자 약 3자리)으로는
+    # 아예 잴 수가 없다 (05 문서 §6.1 이 float32 로도 겪은 문제다).
+    # bf16 은 fp16 과 달리 지수부가 float32 와 같아서 스케일러가 필요 없다.
+    amp: str = "off"
+
 
 def supervised_loss(
     model, Vm: torch.Tensor, Va: torch.Tensor,
@@ -117,6 +137,50 @@ def supervised_loss(
     dv = (Vm[:, model.pq_idx] - Vm_true[:, model.pq_idx]) * model.vm_w
     da = (Va[:, model.va_idx] - Va_true[:, model.va_idx]) * model.va_w
     return (dv**2).mean() + (da**2).mean()
+
+
+def autocast_ctx(device, amp: str):
+    """``cfg.amp`` 를 :func:`torch.autocast` 문맥으로 바꾼다. "off" 면 무동작."""
+    if amp == "off":
+        return contextlib.nullcontext()
+    if amp not in ("bf16", "fp16"):
+        raise ValueError(f'amp 는 "off" | "bf16" | "fp16" 중 하나여야 한다: {amp!r}')
+    dev = torch.device(device).type
+    if dev != "cuda":
+        # CPU autocast 는 이득이 없고 bf16 커널이 없는 연산에서 느려지기만 한다.
+        return contextlib.nullcontext()
+    dtype = torch.bfloat16 if amp == "bf16" else torch.float16
+    return torch.autocast(device_type="cuda", dtype=dtype)
+
+
+@torch.no_grad()
+def validate(model, b: "Bundle", va: torch.Tensor, cfg: TrainConfig,
+             val_load: torch.Tensor) -> tuple[float, float]:
+    """검증 분할의 (지도손실, P/부하 %) 를 **청크로 나눠** 잰다.
+
+    한 방에 넣지 않는 이유는 :attr:`TrainConfig.val_chunk` 주석에 있다.
+    청크로 나눠도 값은 정확히 같다 — 지도손실은 청크 크기로 가중평균하고,
+    물리 잔차는 표본별 합을 누적한 뒤 마지막에 한 번만 나눈다.
+    """
+    chunk = cfg.val_chunk or cfg.batch
+    n = len(va)
+    sup_sum = 0.0
+    res_sum = torch.zeros((), device=b.p_spec.device, dtype=torch.float32)
+    for s in range(0, n, chunk):
+        k = va[s : s + chunk]
+        Vm, Va = model(b.X[k])
+        Vm, Va = Vm.float(), Va.float()
+        sup_sum += supervised_loss(model, Vm, Va, b.Vm[k], b.Va[k]).item() * len(k)
+        if cfg.select == "phys":
+            rp, _ = b.physics.residual(
+                Vm, Va, b.p_spec[k], b.q_spec[k], b.outage[k]
+            )
+            res_sum = res_sum + rp.abs().sum(-1).sum()
+    vloss = sup_sum / max(n, 1)
+    vphys = float("nan")
+    if cfg.select == "phys":
+        vphys = (res_sum / max(n, 1) / val_load).item() * 100.0
+    return vloss, vphys
 
 
 def lambda_at(epoch: int, cfg: TrainConfig) -> float:
@@ -624,7 +688,10 @@ def train(
 
         for s in range(0, len(perm), cfg.batch):
             j = perm[s : s + cfg.batch]
-            Vm, Va = model(b.X[j])
+            with autocast_ctx(b.device, cfg.amp):
+                Vm, Va = model(b.X[j])
+            # 손실은 언제나 float32 에서. 위 주석(TrainConfig.amp) 참조.
+            Vm, Va = Vm.float(), Va.float()
             sup = supervised_loss(model, Vm, Va, b.Vm[j], b.Va[j])
             loss = sup
             if lam > 0:
@@ -640,16 +707,7 @@ def train(
 
         # 검증은 항상 순수 지도손실로 — λ 가 바뀌어도 비교 가능해야 한다
         model.eval()
-        with torch.no_grad():
-            Vm, Va = model(b.X[va])
-            vloss = supervised_loss(model, Vm, Va, b.Vm[va], b.Va[va]).item()
-            # select="phys" 면 고르는 기준만 바꾼다. 기록에는 둘 다 남긴다.
-            vphys = float("nan")
-            if cfg.select == "phys":
-                rp, _ = b.physics.residual(
-                    Vm, Va, b.p_spec[va], b.q_spec[va], b.outage[va]
-                )
-                vphys = (rp.abs().sum(-1).mean() / val_load).item() * 100.0
+        vloss, vphys = validate(model, b, va, cfg, val_load)
         crit = vphys if cfg.select == "phys" else vloss
         sched.step(crit)
         hist.append(

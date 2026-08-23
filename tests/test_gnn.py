@@ -196,3 +196,86 @@ def test_graph_diameter_sets_the_layer_count(name, normal, worst_n1):
         if (d := diameter(_adjacency(ps.f_bus, ps.t_bus, drop=k))[0]) != float("inf")
     )
     assert worst == worst_n1
+
+
+# --------------------------------------------------- 메모리 절약 장치 (06 §8.2)
+#
+# case118 GAT 18층이 8 GB 에 안 들어가서 넣은 것들이다. 셋 다 **결과를 바꾸면
+# 안 되는** 종류라, 여기서 그걸 못박는다. 하나라도 값을 바꾸면 지금까지의
+# 모든 비교가 무의미해진다.
+def test_grad_checkpointing_changes_nothing_but_memory(ds):
+    """체크포인팅을 켠 모델과 끈 모델의 **기울기가 같아야** 한다.
+
+    역전파 때 순전파를 다시 도는 것뿐이므로 수학적으로 완전히 같다.
+    dropout 이 있으면 재계산에서 다른 마스크가 나올 수 있어 기본값 0 을 쓴다.
+    """
+    sp = ds.split_random(seed=0)
+
+    def grads(checkpoint: bool):
+        b, m = prepare(ds, _spec(checkpoint=checkpoint), split=sp, seed=0)
+        m.train()
+        idx = torch.arange(32)
+        Vm, Va = m(b.X[idx])
+        loss = ((Vm - b.Vm[idx]) ** 2).mean() + ((Va - b.Va[idx]) ** 2).mean()
+        loss.backward()
+        return loss.item(), [p.grad.clone() for p in m.parameters() if p.grad is not None]
+
+    l_off, g_off = grads(False)
+    l_on, g_on = grads(True)
+
+    assert l_on == pytest.approx(l_off, rel=1e-12)
+    assert len(g_on) == len(g_off) > 0, "기울기가 하나도 안 흐르면 시험이 무의미하다"
+    for a, c in zip(g_off, g_on):
+        assert torch.allclose(a, c, rtol=1e-5, atol=1e-7)
+
+
+def test_checkpointing_is_off_during_eval(ds):
+    """추론에서는 체크포인팅이 걸리지 않아야 한다 — 켜 봐야 손해다."""
+    b, m = prepare(ds, _spec(checkpoint=True), split=ds.split_random(seed=0), seed=0)
+    m.eval()
+    with torch.no_grad():
+        Vm1, Va1 = m(b.X[:16])
+    b2, m2 = prepare(ds, _spec(checkpoint=False), split=ds.split_random(seed=0), seed=0)
+    m2.eval()
+    with torch.no_grad():
+        Vm2, Va2 = m2(b2.X[:16])
+    assert torch.equal(Vm1, Vm2) and torch.equal(Va1, Va2)
+
+
+def test_validation_chunking_gives_the_same_numbers(ds):
+    """검증을 나눠 봐도 지도손실·P/부하 % 가 같아야 한다.
+
+    예전에는 검증 분할을 한 방에 넣었다. case118 GAT 에서는 간선 텐서가
+    한 개에 4.5 GB 라 그게 불가능하다. 나눠 재도 값이 같다는 것이 전제다.
+
+    허용오차가 1e-5 인 것은 **수식이 달라서가 아니라 float32 라서**다.
+    나눗셈 순서가 바뀌면 마지막 몇 비트가 흔들린다 (실측 상대차 1.2e-7 =
+    float32 엡실론). ``evaluate`` 도 청크 크기에 따라 같은 크기로 흔들린다.
+    """
+    from nnopf.train import validate
+
+    sp = ds.split_random(seed=0)
+    b, m = prepare(ds, _spec(), split=sp, seed=0)
+    va = torch.as_tensor(sp["val"], dtype=torch.long, device=b.device)
+    val_load = b.p_spec[va].abs().sum(-1).mean().clamp(min=1e-9)
+
+    ref = validate(m, b, va, TrainConfig(select="phys", val_chunk=len(va)), val_load)
+    for chunk in (7, 16, 64):
+        got = validate(m, b, va, TrainConfig(select="phys", val_chunk=chunk), val_load)
+        assert got[0] == pytest.approx(ref[0], rel=1e-5), f"지도손실이 청크 {chunk} 에서 달라짐"
+        assert got[1] == pytest.approx(ref[1], rel=1e-5), f"P/부하가 청크 {chunk} 에서 달라짐"
+
+
+def test_amp_is_a_no_op_on_cpu(ds):
+    """CPU 에서는 --amp 를 줘도 학습 결과가 비트 단위로 같아야 한다.
+
+    bf16 커널이 CPU 에 다 있지도 않고 이득도 없어서 무동작으로 두었다.
+    이게 깨지면 CPU 로 낸 기존 결과와 GPU 결과를 나란히 놓을 수 없게 된다.
+    """
+    sp = ds.split_random(seed=0)
+    out = []
+    for amp in ("off", "bf16"):
+        b, m = prepare(ds, _spec(), split=sp, seed=0)
+        train(m, b, TrainConfig(epochs=3, batch=64, seed=0, amp=amp), verbose=False)
+        out.append(torch.cat([p.detach().reshape(-1) for p in m.parameters()]))
+    assert torch.equal(out[0], out[1])

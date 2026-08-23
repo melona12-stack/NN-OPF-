@@ -141,6 +141,14 @@ def main() -> int:
                    help="손실을 야코비안 민감도로 가중하는 세기. "
                         "0=균등(기본), 1=민감도 그대로. 오차가 전력으로 크게 "
                         "증폭되는 모선에 벌점을 몰아준다")
+    p.add_argument("--amp", default="off", choices=["off", "bf16", "fp16"],
+                   help="학습 순전파를 반정밀도로. GAT 의 간선 텐서가 절반이 된다. "
+                        "손실은 언제나 float32 로 되돌린 뒤 계산한다")
+    p.add_argument("--grad-checkpoint", action="store_true",
+                   help="GAT 층의 활성값을 들고 있지 않고 역전파 때 다시 계산한다. "
+                        "계산이 1/3 늘지만 18층 활성값이 11.6 GB -> 0.6 GB")
+    p.add_argument("--val-chunk", type=int, default=0,
+                   help="검증을 한 번에 몇 표본씩 볼지. 0=배치와 같게(기본)")
     p.add_argument("--select", default="loss", choices=["loss", "phys"],
                    help="되돌릴 가중치를 고르는 기준. loss=표준화 지도손실, "
                         "phys=검증 분할의 P/부하 %% (미지 N-1 에서는 이쪽)")
@@ -168,6 +176,7 @@ def main() -> int:
             gate=not a.no_gate,
             agg=a.agg,
             skip_init=a.skip_init, skip_freeze=a.skip_freeze,
+            checkpoint=a.grad_checkpoint,
         )
     else:
         spec = SurrogateSpec(
@@ -183,6 +192,7 @@ def main() -> int:
         lam_warmup=pre["lam_warmup"], lam_ramp=pre["lam_ramp"], seed=a.train_seed,
         patience=a.patience, lr_patience=a.lr_patience,
         select=a.select, jac_alpha=a.jac_alpha,
+        amp=a.amp, val_chunk=a.val_chunk,
     )
 
     ds = load_or_make(a.case, n, a.seed, a.workers)
@@ -209,7 +219,10 @@ def main() -> int:
     print(f"학습: epoch {base_cfg['epochs']} · 배치 {base_cfg['batch']} · "
           f"lr {base_cfg['lr']:g} · patience {base_cfg['patience']}"
           f"(lr {base_cfg['lr_patience']}) · select {base_cfg['select']} · "
-          f"jac_alpha {base_cfg['jac_alpha']:g} · 학습시드 {base_cfg['seed']}\n")
+          f"jac_alpha {base_cfg['jac_alpha']:g} · 학습시드 {base_cfg['seed']} · "
+          f"amp {base_cfg['amp']} · 검증청크 "
+          f"{base_cfg['val_chunk'] or base_cfg['batch']}"
+          f"{' · 체크포인팅' if getattr(spec, 'checkpoint', False) else ''}\n")
 
     results: list[dict] = []
     print(HEAD)

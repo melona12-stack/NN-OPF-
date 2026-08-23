@@ -167,7 +167,7 @@
       "problemMatcher": []
     },
     {
-      "label": "24. 검사 — 회귀 테스트 전체 86개 (30분)",
+      "label": "24. 검사 — 회귀 테스트 전체 90개 (30분)",
       "type": "shell",
       "command": "${workspaceFolder}/.venv/Scripts/python.exe -m pytest tests/ -q",
       "problemMatcher": [],
@@ -225,6 +225,12 @@
       "label": "34. M4 ★★ GAT 12층 · lr 5e-4 · 3000 epoch (아직 수렴 전, 2.5시간)",
       "type": "shell",
       "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s03_train_surrogate.py --case case30 --model gat -n 30000 --epochs 3000 --layers 12 --lr 5e-4 --patience 900 --lr-patience 200 --split unseen-n1 --select phys --tag _sel_gat12long_un1",
+      "problemMatcher": []
+    },
+    {
+      "label": "35. M4 ★★★ case118 GAT 18층 — 메모리 절약 켜고 시간만 재기 (30 epoch)",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s03_train_surrogate.py --case case118 --model gat -n 60000 --epochs 30 --layers 18 --lr 5e-4 --split unseen-n1 --select phys --amp bf16 --grad-checkpoint --no-save",
       "problemMatcher": []
     },
     {
