@@ -75,13 +75,19 @@
       "problemMatcher": []
     },
     {
-      "label": "▶ 57. PI-GAT 네 번째 — 스케줄러를 아예 끄고 (--lr-patience 2000). 33번과 비교 (55분)",
+      "label": "▶ 59. 조기종료까지 끄고 λ=5e-3 완주 (--patience 2000). 마지막 교란변수 제거 (85분)",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s03_train_surrogate.py --case case30 -n 30000 --epochs 1500 --lr 5e-4 --model gat --layers 8 --split unseen-n1 --select phys --lr-patience 2000 --patience 2000 --lam 5e-3 --tag _pigat5_un1",
+      "problemMatcher": []
+    },
+    {
+      "label": "✓ 57. PI-GAT 스케줄러 OFF · λ=5e-3 — 3.244%. ep 760 최고 후 ep 960 조기종료. 같은 epoch 에선 58번을 계속 앞섰다 (§6.1)",
       "type": "shell",
       "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s03_train_surrogate.py --case case30 -n 30000 --epochs 1500 --lr 5e-4 --model gat --layers 8 --split unseen-n1 --select phys --lr-patience 2000 --lam 5e-3 --tag _pigat4_un1",
       "problemMatcher": []
     },
     {
-      "label": "▶ 58. 그 대조군 — 같은 조건에 λ=0. 이래야 물리손실 효과만 남는다 (55분)",
+      "label": "✓ 58. 그 대조군 λ=0 — 2.818%, 1,499 완주. 물리손실은 epoch 당 55% 비싸다 (§6.1)",
       "type": "shell",
       "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s03_train_surrogate.py --case case30 -n 30000 --epochs 1500 --lr 5e-4 --model gat --layers 8 --split unseen-n1 --select phys --lr-patience 2000 --lam 0 --tag _gatfix_un1",
       "problemMatcher": []
