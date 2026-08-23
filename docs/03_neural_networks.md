@@ -586,8 +586,13 @@ if self.spec.vm_head == "scaled":
 > 것입니다. 덧붙여 그 기준선 자체가 수치적으로 망가져 있던 적도 있습니다 —
 > **비교 대상도 검증해야 합니다** (§7.6).
 >
-> 그 뒤 `lstsq` 초기화와 물리손실로 **0.62%** 까지 좁혔지만 아직 못 넘었습니다
+> 그 뒤 `lstsq` 초기화·선택규칙·물리손실(λ=5e-3)을 차례로 걸어 **0.592%** 가 됐고,
+> 마침내 선형(0.608%)을 **다섯 지표 전부에서** 넘었습니다
 > ([06](06_surrogate_training.md) §6.1).
+>
+> 다만 비교군을 더 늘리자 그림이 또 바뀝니다. **야코비안 선형화**는 case30 에서
+> 우리 신경망을 10배 이기고, case118 에서는 3.2배 집니다
+> ([06](06_surrogate_training.md) §7.9). 기준선은 늘릴수록 정직해집니다.
 
 ### 6.3 물리 일관성과 점별 정확도는 다른 지표입니다
 
@@ -730,7 +735,9 @@ s.t. NN_θ(x) = 0      ← 조류방정식 대신 학습된 함수
 
 - [x] `src/nnopf/baselines.py` — 최소제곱 선형 기준선
       ([06](06_surrogate_training.md) §7.6 에서 수치적으로 확정)
-- [ ] DC 조류계산·고정점 선형화 기준선 추가
+- [x] DC 조류계산·야코비안(고정점) 선형화 기준선 추가 —
+      `src/nnopf/baselines.py::DCPowerFlow / JacobianLinear`,
+      `scripts/s09_physical_baselines.py` ([06](06_surrogate_training.md) §7.9)
 - [x] `scripts/s03_train_surrogate.py`
 - [x] 지표표·그림 자동 생성 — `scripts/s04_plot.py` (그림 5장),
       `scripts/s03b_topology_breakdown.py` (정상/미지 N-1 분해)
