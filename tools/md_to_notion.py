@@ -127,7 +127,9 @@ def _merge_quotes(lines: list[str]) -> list[str]:
         alert = _ALERT_RE.match(buf[0])
         if alert:
             icon, color = ALERTS[alert.group(1)]
-            head = alert.group(2).strip()
+            # 제목은 통째로 굵게가 되므로 안쪽 ``**`` 를 지운다. 안 지우면
+            # ``**A **B** C**`` 가 되어 Notion 이 별표를 엉뚱하게 짝짓는다.
+            head = alert.group(2).strip().replace("**", "")
             body = ([f"**{head}**"] if head else []) + buf[1:]
             out.append(f'<callout icon="{icon}" color="{color}">')
             out.extend("\t" + ln for ln in _join_open_bold(body))
