@@ -294,6 +294,18 @@
       "problemMatcher": []
     },
     {
+      "label": "46. M4 ★★★★ λ 스윕 — 남은 1.8퍼센트를 넘길 λ 가 있나 (case118 무작위, 50분)",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s03_train_surrogate.py --case case118 -n 60000 --epochs 1500 --lr 2e-3 --split random --select phys --skip-init lstsq --lam-sweep 1e-3 2e-3 5e-3 --tag _lamsweep_rand",
+      "problemMatcher": []
+    },
+    {
+      "label": "47. M4 ★★★ 같은 처방을 미지 N-1 에도 — 격차 8.6퍼센트 (case118, 15분)",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s03_train_surrogate.py --case case118 -n 60000 --epochs 1500 --lr 2e-3 --split unseen-n1 --select phys --skip-init lstsq --lam 5e-4 --tag _lsqlam_un1",
+      "problemMatcher": []
+    },
+    {
       "label": "28. 업로드 — results/ 를 GitHub 로",
       "type": "shell",
       "command": "powershell -ExecutionPolicy Bypass -File ${workspaceFolder}/scripts/gpu_run.ps1 --commit-only",
