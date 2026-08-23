@@ -318,6 +318,12 @@
       "problemMatcher": []
     },
     {
+      "label": "50. M4 ★★★★★ 마지막 칸 λ 스윕 — 1.0퍼센트만 남았다 (case118 미지 N-1, 1시간)",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s03_train_surrogate.py --case case118 -n 60000 --epochs 1500 --lr 2e-3 --split unseen-n1 --select phys --skip-init lstsq --lam-sweep 1e-2 3e-2 1e-1 --tag _lamhi_un1",
+      "problemMatcher": []
+    },
+    {
       "label": "28. 업로드 — results/ 를 GitHub 로",
       "type": "shell",
       "command": "powershell -ExecutionPolicy Bypass -File ${workspaceFolder}/scripts/gpu_run.ps1 --commit-only",
