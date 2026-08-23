@@ -270,6 +270,24 @@
       "problemMatcher": []
     },
     {
+      "label": "42. M4 ★★★★ 40번을 물리 기준으로 다시 고르기 — 채점 잣대와 맞춘다 (10분)",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s03_train_surrogate.py --case case118 -n 60000 --epochs 1500 --lr 2e-3 --split random --select phys --skip-init lstsq --tag _lsqphys_rand",
+      "problemMatcher": []
+    },
+    {
+      "label": "43. M4 ★★ 같은 교정을 case30 무작위에도 (5분)",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s03_train_surrogate.py --case case30 -n 30000 --epochs 1500 --lr 2e-3 --split random --select phys --skip-init lstsq --tag _lsqphys_rand",
+      "problemMatcher": []
+    },
+    {
+      "label": "44. M4 ★★ GAT + lstsq 중간 학습률 1e-3 — 38번은 안 배웠고 39번은 발산 위험 (30분)",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s03_train_surrogate.py --case case30 --model gat -n 30000 --epochs 1500 --layers 8 --lr 1e-3 --patience 600 --lr-patience 120 --split unseen-n1 --select phys --skip-init lstsq --tag _gat8lsqmid_un1",
+      "problemMatcher": []
+    },
+    {
       "label": "28. 업로드 — results/ 를 GitHub 로",
       "type": "shell",
       "command": "powershell -ExecutionPolicy Bypass -File ${workspaceFolder}/scripts/gpu_run.ps1 --commit-only",
