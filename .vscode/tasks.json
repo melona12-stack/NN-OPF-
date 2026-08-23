@@ -56,7 +56,7 @@
       "problemMatcher": []
     },
     {
-      "label": "· 24. 검사 — 회귀 테스트 전체 93개 (3분)",
+      "label": "· 24. 검사 — 회귀 테스트 전체 94개 (3분)",
       "type": "shell",
       "command": "${workspaceFolder}/.venv/Scripts/python.exe -m pytest tests/ -q",
       "problemMatcher": [],
@@ -75,19 +75,7 @@
       "problemMatcher": []
     },
     {
-      "label": "▶ 22. 속도 — CPU vs GPU · case30. §8 이 아직 CPU 기준이다 (10분)",
-      "type": "shell",
-      "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s05_device_benchmark.py --case case30",
-      "problemMatcher": []
-    },
-    {
-      "label": "▶ 23. 속도 — CPU vs GPU · case118. 논문 속도표에 바로 들어간다 (10분)",
-      "type": "shell",
-      "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s05_device_benchmark.py --case case118 --epochs 3",
-      "problemMatcher": []
-    },
-    {
-      "label": "▶ 51. PI-GAT — 물리손실 하나만 다른 대조군. 33번(2.688%)과 비교 (case30 미지 N-1, 55분)",
+      "label": "✓ 51. PI-GAT (λ=5e-3) · 4.07% — 학습률이 16,384배 깎여 얼어붙음. 54번으로 재시도 (§6.1)",
       "type": "shell",
       "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s03_train_surrogate.py --case case30 -n 30000 --epochs 1500 --lr 5e-4 --model gat --layers 8 --split unseen-n1 --select phys --lam 5e-3 --tag _pigat2_un1",
       "problemMatcher": []
@@ -96,6 +84,24 @@
       "label": "▶ 53. 절제 — 스케일링 인자 헤드를 꺼 본다 (--vm-head raw). 49번과 짝 (case118, 20분)",
       "type": "shell",
       "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s03_train_surrogate.py --case case118 -n 60000 --epochs 1500 --lr 2e-3 --split unseen-n1 --select phys --skip-init lstsq --lam 5e-3 --vm-head raw --tag _rawhead_un1",
+      "problemMatcher": []
+    },
+    {
+      "label": "▶ 54. PI-GAT 재시도 — 스케줄러를 지도손실로 (51번은 lr 이 16,384배 깎였다, 55분)",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s03_train_surrogate.py --case case30 -n 30000 --epochs 1500 --lr 5e-4 --model gat --layers 8 --split unseen-n1 --select phys --sched-on loss --lam 5e-3 --tag _pigat3_un1",
+      "problemMatcher": []
+    },
+    {
+      "label": "▶ 55. 추론 속도 — GPU 로 재측정. §8 표가 CPU 기준뿐이다 (case30, 5분)",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s10_inference_benchmark.py --case case30",
+      "problemMatcher": []
+    },
+    {
+      "label": "▶ 56. 추론 속도 — GPU 로 재측정 (case118, 10분)",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s10_inference_benchmark.py --case case118",
       "problemMatcher": []
     },
     {
@@ -222,6 +228,18 @@
       "label": "✓ 21. 학습곡선 — case118 · 42,000 에서도 포화 전 (§5.2)",
       "type": "shell",
       "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s03_train_surrogate.py --case case118 -n 60000 --epochs 600 --curve 7000 14000 28000 42000 --tag _curve60k",
+      "problemMatcher": []
+    },
+    {
+      "label": "✓ 22. 학습 속도 — CPU vs GPU · case30 · 배치별 역전점 (§8.1)",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s05_device_benchmark.py --case case30",
+      "problemMatcher": []
+    },
+    {
+      "label": "✓ 23. 학습 속도 — CPU vs GPU · case118 (§8.1)",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s05_device_benchmark.py --case case118 --epochs 3",
       "problemMatcher": []
     },
     {

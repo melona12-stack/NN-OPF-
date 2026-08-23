@@ -113,6 +113,9 @@ def main() -> int:
     p.add_argument("--device", default="auto", choices=["auto", "cpu", "cuda"],
                    help="auto 는 쓸 수 있으면 GPU. 잔차 측정은 항상 CPU float64")
 
+    p.add_argument("--sched-on", default="crit", choices=["crit", "loss"],
+                   help="학습률 스케줄러가 볼 값. crit=선택 기준(기본), "
+                        "loss=지도손실(조용해서 잡음에 안 흔들린다, 06 §6.1)")
     p.add_argument("--resume", action="store_true",
                    help="중간 저장본이 있으면 거기서 이어서 돌린다. "
                         "저장은 항상 하므로 끊긴 뒤에 이 옵션만 붙이면 된다")
@@ -205,7 +208,7 @@ def main() -> int:
         lam_warmup=pre["lam_warmup"], lam_ramp=pre["lam_ramp"], seed=a.train_seed,
         patience=a.patience, lr_patience=a.lr_patience,
         select=a.select, jac_alpha=a.jac_alpha,
-        amp=a.amp, val_chunk=a.val_chunk,
+        amp=a.amp, val_chunk=a.val_chunk, sched_on=a.sched_on,
     )
 
     ds = load_or_make(a.case, n, a.seed, a.workers)
@@ -233,7 +236,7 @@ def main() -> int:
           f"lr {base_cfg['lr']:g} · patience {base_cfg['patience']}"
           f"(lr {base_cfg['lr_patience']}) · select {base_cfg['select']} · "
           f"jac_alpha {base_cfg['jac_alpha']:g} · 학습시드 {base_cfg['seed']} · "
-          f"amp {base_cfg['amp']} · 검증청크 "
+          f"amp {base_cfg['amp']} · 스케줄러 {base_cfg['sched_on']} · 검증청크 "
           f"{base_cfg['val_chunk'] or base_cfg['batch']}"
           f"{' · 체크포인팅' if getattr(spec, 'checkpoint', False) else ''}\n")
 

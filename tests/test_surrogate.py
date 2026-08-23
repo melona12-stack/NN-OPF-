@@ -682,3 +682,42 @@ def test_resume_refuses_a_different_config(ds, tmp_path, monkeypatch):
     with pytest.raises(SystemExit, match="설정이 지금과 다릅니다"):
         train(m, b, TrainConfig(epochs=12, batch=64, seed=0, lr=2e-3,
                                 resume=True, ckpt_path=str(ck)), verbose=False)
+
+
+def test_scheduler_can_follow_a_quieter_signal(ds):
+    """``sched_on="loss"`` 면 학습률 스케줄러가 지도손실만 봐야 한다.
+
+    ``crit`` 하나가 모델 선택·조기 종료·학습률을 다 몰면, 시끄러운 지표
+    (case30 의 ``val_phys`` 는 epoch 마다 3.07% 씩 튄다)를 "개선 없음" 으로
+    잘못 읽어 학습률을 깎는다. 실측으로 51번(PI-GAT)은 **16,384배** 깎여
+    학습이 얼어붙었다 (06 문서 §6.1).
+
+    고르는 기준은 그대로 ``phys`` 여야 한다 — 바뀌는 것은 스케줄러뿐이다.
+    """
+    sp = ds.split_unseen_n1(seed=0)
+    seen = {"crit": [], "loss": []}
+
+    import nnopf.train as T
+    real_step = torch.optim.lr_scheduler.ReduceLROnPlateau.step
+
+    for mode in ("crit", "loss"):
+        b, m = prepare(ds, _spec(), split=sp, seed=0)
+        cfg = TrainConfig(epochs=4, batch=64, seed=0, select="phys", sched_on=mode)
+
+        def spy(self, metric, *a, _m=mode, **k):
+            seen[_m].append(float(metric))
+            return real_step(self, metric, *a, **k)
+
+        torch.optim.lr_scheduler.ReduceLROnPlateau.step = spy
+        try:
+            r = train(m, b, cfg, verbose=False)
+        finally:
+            torch.optim.lr_scheduler.ReduceLROnPlateau.step = real_step
+
+        # 스케줄러가 받은 값이 history 의 어느 열과 같은지 확인한다
+        col = "val" if mode == "loss" else "val_phys"
+        for got, row in zip(seen[mode], r["history"]):
+            assert got == pytest.approx(row[col], rel=1e-9), \
+                f"sched_on={mode} 인데 {col} 이 아닌 값을 받았다"
+
+    assert seen["crit"] != seen["loss"], "두 신호가 실제로 달라야 이 시험이 뜻이 있다"

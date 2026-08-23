@@ -85,6 +85,22 @@ class TrainConfig:
     #
     # 재현성을 지키려고 난수 상태(torch·numpy)까지 같이 저장한다. 안 그러면
     # 이어달린 결과가 한 번에 돌린 결과와 달라져 비교가 깨진다.
+    # 학습률 스케줄러가 **무엇을 보고** 학습률을 깎을지.
+    #
+    #   "crit" — select 가 가리키는 값 (지금까지의 동작, 기본값)
+    #   "loss" — 표준화 지도손실. 훨씬 조용하다
+    #
+    # 셋(모델 선택·조기 종료·학습률)이 원하는 성질이 다르다. 앞의 둘은
+    # **우리가 보고하는 값**이어야 하고, 스케줄러는 **조용한 값**이어야 한다.
+    # case30 의 val_phys 는 epoch 마다 3.07% 씩 튀는데 지도손실은 1.06% 다
+    # (06 문서 §6.1). 시끄러운 값을 스케줄러에 물리면 "개선 없음" 으로 잘못
+    # 읽고 학습률을 깎는다 — 실측으로 43번은 125배, 51번(PI-GAT)은
+    # **16,384배** 깎여 학습이 얼어붙었다.
+    #
+    # 기본값을 "crit" 으로 두는 것은 과거 결과 30여 개와의 비교 가능성 때문이다
+    # (§5.3 의 "같은 조건" 규칙). 새 실험은 "loss" 를 쓰는 것이 낫다.
+    sched_on: str = "crit"
+
     ckpt_path: str | None = None
     ckpt_every: int = 50
     # 중간 저장본이 있어도 **명시할 때만** 이어서 돌린다. 자동으로 이으면
@@ -785,7 +801,8 @@ def train(
         model.eval()
         vloss, vphys = validate(model, b, va, cfg, val_load)
         crit = vphys if cfg.select == "phys" else vloss
-        sched.step(crit)
+        # 스케줄러만 따로 신호를 받을 수 있다 (TrainConfig.sched_on 주석 참조)
+        sched.step(vloss if cfg.sched_on == "loss" else crit)
         hist.append(
             {"epoch": ep, "train": tot / n_seen, "val": vloss, "val_phys": vphys,
              "lam": lam, "lr": opt.param_groups[0]["lr"]}
@@ -853,8 +870,14 @@ def benchmark(
     from nnopf.ybus import make_ybus
 
     model.eval()
-    ii = torch.as_tensor(np.asarray(idx), dtype=torch.long)
+    ii = torch.as_tensor(np.asarray(idx), dtype=torch.long, device=b.device)
     sub = ii[:n_single]
+
+    # GPU 는 커널을 비동기로 띄운다. 동기화 없이 재면 **큐에 넣는 시간**만
+    # 재게 되어 말도 안 되는 배속이 나온다. 측정 구간 앞뒤로 반드시 맞춘다.
+    def sync() -> None:
+        if b.device.type == "cuda":
+            torch.cuda.synchronize()
 
     # 뉴턴-랩슨 — 상정사고가 없는 표본만 (Ybus 재사용이 공정)
     import dataclasses
@@ -869,25 +892,32 @@ def benchmark(
         # 정확히 데이터셋과 같은 문제가 된다 (발전/부하 분해는 조류계산에 무관).
         sysk = dataclasses.replace(
             b.sys,
-            Pd=-b.p_spec[k].numpy().astype(float),
-            Qd=-b.q_spec[k].numpy().astype(float),
+            Pd=-b.p_spec[k].cpu().numpy().astype(float),
+            Qd=-b.q_spec[k].cpu().numpy().astype(float),
             Qg0=zero_g,
         )
         solve_power_flow(sysk, Pg=zero_g, Ybus=Ybus, tol=1e-8)
     nr_ms = (time.perf_counter() - t0) / max(len(plain), 1) * 1e3
 
     # 대체모델 단건
+    for k in sub.tolist()[:5]:          # 워밍업 (첫 호출은 커널 컴파일이 섞인다)
+        model(b.X[k : k + 1])
+    sync()
     t0 = time.perf_counter()
     for k in sub.tolist():
         model(b.X[k : k + 1])
+    sync()
     single_ms = (time.perf_counter() - t0) / len(sub) * 1e3
 
     # 대체모델 배치
     reps = max(1, 2000 // batch)
+    model(b.X[ii[:batch]])              # 워밍업
+    sync()
     t0 = time.perf_counter()
     for r in range(reps):
         s = (r * batch) % max(len(ii) - batch, 1)
         model(b.X[ii[s : s + batch]])
+    sync()
     batch_ms = (time.perf_counter() - t0) / (reps * batch) * 1e3
 
     return {
