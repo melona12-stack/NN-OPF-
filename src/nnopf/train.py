@@ -111,13 +111,16 @@ class TrainConfig:
     # 학습 배치가 들어가는 크기면 검증도 들어간다 — 그래서 기본이 batch 다.
     val_chunk: int = 0
 
-    # 학습 순전파를 반정밀도로 돌린다. "off" | "bf16" | "fp16".
+    # 학습 순전파를 반정밀도로 돌린다. "off" | "bf16".
     #
     # 간선 텐서가 절반이 되므로 GAT 의 활성값이 그대로 절반이 된다.
     # **손실 계산은 항상 float32 로 되돌린 뒤에 한다** — 물리 잔차는 전압
     # 오차가 max|Y| 배로 증폭되는 양이라 bf16(유효숫자 약 3자리)으로는
     # 아예 잴 수가 없다 (05 문서 §6.1 이 float32 로도 겪은 문제다).
-    # bf16 은 fp16 과 달리 지수부가 float32 와 같아서 스케일러가 필요 없다.
+    # **fp16 은 일부러 넣지 않았다.** fp16 은 지수부가 좁아 기울기가 조용히
+    # 언더플로하므로 ``GradScaler`` 가 필수인데, 스케일러는 손실 스케일을
+    # 자동 조정하다 가끔 배치를 통째로 건너뛴다 — 재현성이 깨진다.
+    # bf16 은 지수부가 float32 와 같아서 스케일러 없이 그냥 된다.
     amp: str = "off"
 
 
@@ -143,14 +146,12 @@ def autocast_ctx(device, amp: str):
     """``cfg.amp`` 를 :func:`torch.autocast` 문맥으로 바꾼다. "off" 면 무동작."""
     if amp == "off":
         return contextlib.nullcontext()
-    if amp not in ("bf16", "fp16"):
-        raise ValueError(f'amp 는 "off" | "bf16" | "fp16" 중 하나여야 한다: {amp!r}')
-    dev = torch.device(device).type
-    if dev != "cuda":
+    if amp != "bf16":
+        raise ValueError(f'amp 는 "off" | "bf16" 중 하나여야 한다: {amp!r}')
+    if torch.device(device).type != "cuda":
         # CPU autocast 는 이득이 없고 bf16 커널이 없는 연산에서 느려지기만 한다.
         return contextlib.nullcontext()
-    dtype = torch.bfloat16 if amp == "bf16" else torch.float16
-    return torch.autocast(device_type="cuda", dtype=dtype)
+    return torch.autocast(device_type="cuda", dtype=torch.bfloat16)
 
 
 @torch.no_grad()

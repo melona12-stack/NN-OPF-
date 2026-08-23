@@ -141,7 +141,7 @@ def main() -> int:
                    help="손실을 야코비안 민감도로 가중하는 세기. "
                         "0=균등(기본), 1=민감도 그대로. 오차가 전력으로 크게 "
                         "증폭되는 모선에 벌점을 몰아준다")
-    p.add_argument("--amp", default="off", choices=["off", "bf16", "fp16"],
+    p.add_argument("--amp", default="off", choices=["off", "bf16"],
                    help="학습 순전파를 반정밀도로. GAT 의 간선 텐서가 절반이 된다. "
                         "손실은 언제나 float32 로 되돌린 뒤 계산한다")
     p.add_argument("--grad-checkpoint", action="store_true",
