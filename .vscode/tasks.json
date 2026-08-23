@@ -325,9 +325,9 @@
       "problemMatcher": []
     },
     {
-      "label": "51. M4 ★★★★★ PI-GAT — M4 의 본체, 아직 한 번도 안 돌렸다 (case30 미지 N-1, 40분)",
+      "label": "51. M4 ★★★★★ PI-GAT 재시도 — lstsq 를 빼야 GAT 가 학습한다 (case30 미지 N-1, 55분)",
       "type": "shell",
-      "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s03_train_surrogate.py --case case30 -n 30000 --epochs 1500 --lr 5e-4 --model gat --layers 8 --split unseen-n1 --select phys --skip-init lstsq --lam-sweep 1e-3 5e-3 --tag _pigat_un1",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s03_train_surrogate.py --case case30 -n 30000 --epochs 1500 --lr 5e-4 --model gat --layers 8 --split unseen-n1 --select phys --lam 5e-3 --tag _pigat2_un1",
       "problemMatcher": []
     },
     {
