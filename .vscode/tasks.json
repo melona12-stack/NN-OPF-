@@ -35,7 +35,6 @@
       "problemMatcher": [],
       "group": "test"
     },
-
     {
       "label": " 3. 데이터 — case30 30,000 표본 만들기 (1분)",
       "type": "shell",
@@ -48,7 +47,6 @@
       "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s03_train_surrogate.py --case case118 -n 60000 --epochs 1 --no-save",
       "problemMatcher": []
     },
-
     {
       "label": " 5. 기준선 ✓ case30 무작위 (5분) — 선형 1.00% / MLP 0.35%",
       "type": "shell",
@@ -73,7 +71,6 @@
       "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s03_train_surrogate.py --case case118 -n 60000 --epochs 1500 --split unseen-n1 --select phys --tag _sel_un1",
       "problemMatcher": []
     },
-
     {
       "label": " 9. M4 ★★ GAT 8층 — case30 미지 N-1 · select phys (50분, 7번 먼저)",
       "type": "shell",
@@ -110,7 +107,6 @@
       "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s03_train_surrogate.py --case case118 --model gat -n 60000 --epochs 30 --layers 18 --no-save",
       "problemMatcher": []
     },
-
     {
       "label": "15. 분석 — 계통 그래프 지름 (층 수를 몇으로 할지, 10초)",
       "type": "shell",
@@ -141,7 +137,6 @@
       "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s03b_topology_breakdown.py --case case30 --tag _sel_un1",
       "problemMatcher": []
     },
-
     {
       "label": "20. 학습곡선 — case30 (3번 먼저)",
       "type": "shell",
@@ -189,6 +184,12 @@
       "label": "27. M4 ★ 야코비안 가중 α=1.0 — MLP 미지 N-1 (5분, 재실행)",
       "type": "shell",
       "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s03_train_surrogate.py --case case30 -n 30000 --epochs 1500 --split unseen-n1 --select phys --jac-alpha 1.0 --tag _jac10_un1",
+      "problemMatcher": []
+    },
+    {
+      "label": "28. 업로드 — results/ 를 GitHub 로",
+      "type": "shell",
+      "command": "powershell -ExecutionPolicy Bypass -File ${workspaceFolder}/scripts/gpu_run.ps1 --commit-only",
       "problemMatcher": []
     },
     {
@@ -306,15 +307,15 @@
       "problemMatcher": []
     },
     {
-      "label": "49. M4 ★★★★★ 마지막 칸 — 이긴 λ 를 미지 N-1 에 (case118, 20분)",
-      "type": "shell",
-      "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s03_train_surrogate.py --case case118 -n 60000 --epochs 1500 --lr 2e-3 --split unseen-n1 --select phys --skip-init lstsq --lam 5e-3 --tag _lam5e3_un1",
-      "problemMatcher": []
-    },
-    {
       "label": "48. M4 ★★★ λ 곡선이 어디서 도나 — 아직 단조 감소 중 (case118 무작위, 50분)",
       "type": "shell",
       "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s03_train_surrogate.py --case case118 -n 60000 --epochs 1500 --lr 2e-3 --split random --select phys --skip-init lstsq --lam-sweep 1e-2 3e-2 1e-1 --tag _lamhi_rand",
+      "problemMatcher": []
+    },
+    {
+      "label": "49. M4 ★★★★★ 마지막 칸 — 이긴 λ 를 미지 N-1 에 (case118, 20분)",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s03_train_surrogate.py --case case118 -n 60000 --epochs 1500 --lr 2e-3 --split unseen-n1 --select phys --skip-init lstsq --lam 5e-3 --tag _lam5e3_un1",
       "problemMatcher": []
     },
     {
@@ -324,9 +325,15 @@
       "problemMatcher": []
     },
     {
-      "label": "28. 업로드 — results/ 를 GitHub 로",
+      "label": "51. M4 ★★★★★ PI-GAT — M4 의 본체, 아직 한 번도 안 돌렸다 (case30 미지 N-1, 40분)",
       "type": "shell",
-      "command": "powershell -ExecutionPolicy Bypass -File ${workspaceFolder}/scripts/gpu_run.ps1 --commit-only",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s03_train_surrogate.py --case case30 -n 30000 --epochs 1500 --lr 5e-4 --model gat --layers 8 --split unseen-n1 --select phys --skip-init lstsq --lam-sweep 1e-3 5e-3 --tag _pigat_un1",
+      "problemMatcher": []
+    },
+    {
+      "label": "52. M4 ★★★★ 마지막 칸의 남은 손잡이 — 표본을 60,000 에서 100,000 으로 (case118 미지 N-1, 60분)",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s03_train_surrogate.py --case case118 -n 100000 --epochs 1500 --lr 2e-3 --split unseen-n1 --select phys --skip-init lstsq --lam 5e-3 --tag _n100k_un1",
       "problemMatcher": []
     }
   ]
