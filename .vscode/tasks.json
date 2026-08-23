@@ -306,6 +306,18 @@
       "problemMatcher": []
     },
     {
+      "label": "49. M4 ★★★★★ 마지막 칸 — 이긴 λ 를 미지 N-1 에 (case118, 20분)",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s03_train_surrogate.py --case case118 -n 60000 --epochs 1500 --lr 2e-3 --split unseen-n1 --select phys --skip-init lstsq --lam 5e-3 --tag _lam5e3_un1",
+      "problemMatcher": []
+    },
+    {
+      "label": "48. M4 ★★★ λ 곡선이 어디서 도나 — 아직 단조 감소 중 (case118 무작위, 50분)",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s03_train_surrogate.py --case case118 -n 60000 --epochs 1500 --lr 2e-3 --split random --select phys --skip-init lstsq --lam-sweep 1e-2 3e-2 1e-1 --tag _lamhi_rand",
+      "problemMatcher": []
+    },
+    {
       "label": "28. 업로드 — results/ 를 GitHub 로",
       "type": "shell",
       "command": "powershell -ExecutionPolicy Bypass -File ${workspaceFolder}/scripts/gpu_run.ps1 --commit-only",
