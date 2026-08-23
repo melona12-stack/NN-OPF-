@@ -1,0 +1,97 @@
+{
+  "case": "case30",
+  "n_samples": 30000,
+  "data_seed": 2026,
+  "split": "unseen-n1",
+  "model": "gat",
+  "spec": {
+    "hidden": 128,
+    "layers": 8,
+    "heads": 4,
+    "dropout": 0.0,
+    "vm_head": "scaled",
+    "vm_margin": 0.05,
+    "residual": true,
+    "skip_init": "lstsq",
+    "skip_freeze": false,
+    "gate": true,
+    "edge_dim": 7,
+    "node_id": 16,
+    "agg": "softmax",
+    "checkpoint": false
+  },
+  "train": {
+    "epochs": 1500,
+    "batch": 256,
+    "lr": 0.0005,
+    "weight_decay": 1e-05,
+    "grad_clip": 2.0,
+    "lam": 0.0,
+    "lam_warmup": 20,
+    "lam_ramp": 50,
+    "patience": 200,
+    "lr_patience": 30,
+    "seed": 0,
+    "select": "phys",
+    "jac_alpha": 0.0,
+    "val_chunk": 0,
+    "amp": "off"
+  },
+  "results": [
+    {
+      "model": "linear",
+      "metrics": {
+        "n": 4767,
+        "vm_mae": 0.000494497533895179,
+        "vm_max": 0.06615960597991943,
+        "va_mae": 0.0015272290193954338,
+        "va_max": 0.10789430141448975,
+        "p_mismatch": 0.06534471938497147,
+        "q_mismatch": 0.0279472892735187,
+        "p_mismatch_max": 0.18543850599186595,
+        "q_mismatch_max": 0.09347855366693365,
+        "p_over_load_pct": 2.0471226722073217,
+        "residual_max": 0.18543850599186595,
+        "vlim_viol_pct": 0.0
+      }
+    },
+    {
+      "lam": 0.001,
+      "metrics": {
+        "n": 4767,
+        "vm_mae": 0.0005213043329790917,
+        "vm_max": 0.0659821629524231,
+        "va_mae": 0.0015538383845960276,
+        "va_max": 0.10791981220245361,
+        "p_mismatch": 0.08064267964780458,
+        "q_mismatch": 0.046374428942151706,
+        "p_mismatch_max": 0.18505158277712402,
+        "q_mismatch_max": 0.09368982214892602,
+        "p_over_load_pct": 2.5263779446658767,
+        "residual_max": 0.18505158277712402,
+        "vlim_viol_pct": 0.0
+      },
+      "best_epoch": 1,
+      "seconds": 534.193430185318
+    },
+    {
+      "lam": 0.005,
+      "metrics": {
+        "n": 4767,
+        "vm_mae": 0.0005212717498568303,
+        "vm_max": 0.06598228216171265,
+        "va_mae": 0.0015538363729154965,
+        "va_max": 0.10792091488838196,
+        "p_mismatch": 0.08064866123177587,
+        "q_mismatch": 0.046387300784889306,
+        "p_mismatch_max": 0.18505336980971043,
+        "q_mismatch_max": 0.09369522124609618,
+        "p_over_load_pct": 2.5265653360309113,
+        "residual_max": 0.18505336980971043,
+        "vlim_viol_pct": 0.0
+      },
+      "best_epoch": 1,
+      "seconds": 579.5389850139618
+    }
+  ]
+}
