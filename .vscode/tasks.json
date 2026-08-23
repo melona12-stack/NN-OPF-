@@ -234,6 +234,18 @@
       "problemMatcher": []
     },
     {
+      "label": "36. M4 ★★★ lstsq + 학습률 낮춤 — 좋은 출발점을 지킨다 (case118, 10분)",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s03_train_surrogate.py --case case118 -n 60000 --epochs 1500 --lr 2e-4 --split unseen-n1 --select phys --skip-init lstsq --tag _lsqlr_un1",
+      "problemMatcher": []
+    },
+    {
+      "label": "37. M4 ★★ 같은 것을 case30 에도 (5분)",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s03_train_surrogate.py --case case30 -n 30000 --epochs 1500 --lr 2e-4 --split unseen-n1 --select phys --skip-init lstsq --tag _lsqlr_un1",
+      "problemMatcher": []
+    },
+    {
       "label": "28. 업로드 — results/ 를 GitHub 로",
       "type": "shell",
       "command": "powershell -ExecutionPolicy Bypass -File ${workspaceFolder}/scripts/gpu_run.ps1 --commit-only",
