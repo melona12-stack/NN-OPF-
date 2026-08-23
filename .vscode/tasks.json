@@ -318,9 +318,9 @@
       "problemMatcher": []
     },
     {
-      "label": "50. M4 ★★★★★ 마지막 칸 λ 스윕 — 1.0퍼센트만 남았다 (case118 미지 N-1, 1시간)",
+      "label": "50. M4 ★★★★★ 마지막 칸 — 전환점 주변을 촘촘히 (case118 미지 N-1, 45분)",
       "type": "shell",
-      "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s03_train_surrogate.py --case case118 -n 60000 --epochs 1500 --lr 2e-3 --split unseen-n1 --select phys --skip-init lstsq --lam-sweep 1e-2 3e-2 1e-1 --tag _lamhi_un1",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s03_train_surrogate.py --case case118 -n 60000 --epochs 1500 --lr 2e-3 --split unseen-n1 --select phys --skip-init lstsq --lam-sweep 7e-3 1e-2 1.5e-2 --tag _lamfine_un1",
       "problemMatcher": []
     },
     {
