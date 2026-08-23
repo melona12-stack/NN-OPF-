@@ -589,3 +589,25 @@ def test_skip_freeze_keeps_the_shortcut_fixed(ds):
     w2 = m2.skip.weight.detach().clone()
     train(m2, b2, TrainConfig(epochs=6, batch=64, seed=0), verbose=False)
     assert not torch.equal(m2.skip.weight, w2)
+
+
+def test_vlim_metric_tolerates_float32_resolution():
+    """float32 해상도보다 좁은 전압 상자를 위반으로 세면 안 된다.
+
+    case118 의 슬랙(모선 68)은 상자가 [1.0349999999, 1.0350000001] 로
+    폭이 2e-10 인데, 모델은 float32 라 1.035 를 1.03499997 로밖에 못 쓴다.
+    허용오차가 없으면 **어떤 모델이든** 이 한 모선이 항상 위반이라,
+    지표가 정확히 100/118 = 0.8475% 에 못박혀 아무것도 구분하지 못한다
+    (06 문서 §7.10).
+    """
+    sysm118 = load_case("case118")
+    width = sysm118.Vmax - sysm118.Vmin
+    assert np.flatnonzero(width < 1e-6).tolist() == [68], "이 시험의 전제가 깨졌다"
+
+    d = generate_dataset("case118", n_samples=12, seed=7, workers=2, verbose=False)
+    sp = d.split_random(seed=0)
+    b, m = prepare(d, _spec(), split=sp, seed=0)
+    viol = evaluate(m, b, sp["test"])["vlim_viol_pct"]
+
+    # 고치기 전에는 어떤 모델이든 정확히 이 값이 나왔다.
+    assert abs(viol - 100 / 118) > 1e-9, "슬랙 설정값이 위반으로 세어지고 있다"

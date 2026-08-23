@@ -611,10 +611,20 @@ def evaluate(
     dP, dQ = torch.cat(dP), torch.cat(dQ)
     load = b.p_spec[ii].double().cpu().abs().sum(-1).mean().clamp(min=1e-9)
 
-    # 전압 한계 위반 (계통 기준)
-    Vmin = torch.as_tensor(b.sys.Vmin, dtype=torch.float64)
-    Vmax = torch.as_tensor(b.sys.Vmax, dtype=torch.float64)
-    viol = ((torch.cat(vms) < Vmin) | (torch.cat(vms) > Vmax)).double()
+    # 전압 한계 위반 (계통 기준).
+    #
+    # **허용오차를 반드시 둬야 한다.** case118 의 슬랙(모선 68)은 상자가
+    # [1.0349999999, 1.0350000001] 로 폭이 2e-10 인데, 모델은 float32 라
+    # 1.035 를 1.03499997 로밖에 못 쓴다. 상자 폭이 float32 해상도
+    # (1.035 근처에서 1.2e-7)보다 좁으니 **어떤 모델이든 항상 위반**이었고,
+    # 지표가 정확히 100/118 = 0.8475% 에 못박혀 아무것도 구분하지 못했다
+    # (06 문서 §7.10). 1e-6 pu 는 운전 관점에서도 위반이 아니고,
+    # 우리 전압 오차(7.5e-05)보다 두 자릿수 아래라 진짜 위반은 안 가린다.
+    VLIM_TOL = 1e-6
+    Vmin = torch.as_tensor(b.sys.Vmin, dtype=torch.float64) - VLIM_TOL
+    Vmax = torch.as_tensor(b.sys.Vmax, dtype=torch.float64) + VLIM_TOL
+    Vm_all = torch.cat(vms)
+    viol = ((Vm_all < Vmin) | (Vm_all > Vmax)).double()
 
     return {
         "n": int(len(idx)),
