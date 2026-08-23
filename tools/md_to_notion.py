@@ -153,11 +153,14 @@ def _merge_quotes(lines: list[str]) -> list[str]:
 _INLINE_MATH_RE = re.compile(r"(?<!\$)\$(?!\$)((?:\\.|[^$\\])+?)(?<!\\)\$(?!\$)")
 
 
-def _join_open_bold(body: list[str]) -> list[str]:
-    """콜아웃 본문에서 **굵게**가 줄바꿈을 넘는 줄을 다음 줄과 이어 붙인다.
+_LIST_RE = re.compile(r"^\s*(?:[-*+]\s|\d+\.\s)")
 
-    Notion 은 콜아웃 안에서 ``**`` 가 줄을 넘어가면 굵게로 인식하지 못하고
-    별표를 엉뚱한 자리에 그대로 남긴다. 예를 들어
+
+def _join_open_bold(body: list[str], struct: tuple[str, ...] = ("<", "```", "|", "$$")) -> list[str]:
+    """``**굵게**`` 가 줄바꿈을 넘는 줄을 다음 줄과 이어 붙인다.
+
+    Notion 은 ``**`` 가 줄을 넘어가면 굵게로 인식하지 못하고 별표를 엉뚱한
+    자리에 그대로 남긴다. 예를 들어
 
         **끼워 넣는 자리는 완전히
         동일합니다.** 그래서 ...
@@ -165,10 +168,14 @@ def _join_open_bold(body: list[str]) -> list[str]:
     가 ``동일합니다.** 그래서 ... **계약서`` 처럼 깨진다. 원본 마크다운은
     읽기 좋게 80자에서 줄을 접으므로 이런 경우가 계속 생긴다.
 
+    콜아웃 안에서만 생기는 문제가 아니다 — **본문 문단에서도 똑같이 깨진다.**
+    그래서 ``convert()`` 가 문서 전체에 한 번, ``_merge_quotes`` 가 콜아웃
+    본문에 한 번 돌린다.
+
     Notion 은 어차피 알아서 줄바꿈하므로, **별표가 안 닫힌 줄만** 다음 줄과
-    합쳐 준다. 표·코드블록 같은 구조 줄은 건드리지 않는다.
+    합쳐 준다. 표·코드블록 같은 구조 줄은 건드리지 않고, 다음 줄이 새 목록
+    항목이면 서로 다른 항목을 붙여 버리므로 거기서 멈춘다.
     """
-    STRUCT = ("<", "```", "|", "$$")
     out: list[str] = []
     i = 0
     while i < len(body):
@@ -176,8 +183,9 @@ def _join_open_bold(body: list[str]) -> list[str]:
         # 별표 개수가 홀수면 굵게가 이 줄에서 안 닫혔다는 뜻
         while (line.count("**") % 2 == 1 and i + 1 < len(body)
                and body[i + 1].strip()
-               and not body[i + 1].lstrip().startswith(STRUCT)
-               and not line.lstrip().startswith(STRUCT)):
+               and not body[i + 1].lstrip().startswith(struct)
+               and not _LIST_RE.match(body[i + 1])
+               and not line.lstrip().startswith(struct)):
             i += 1
             line = line.rstrip() + " " + body[i].lstrip()
         out.append(line)
@@ -256,6 +264,9 @@ def convert(md: str, links: dict[str, str] | None = None) -> tuple[str, str]:
     if buf:
         staged.extend(buf)
 
+    # 본문 문단의 줄 넘는 굵게를 먼저 잇는다. 콜아웃(``>``)·표(``|``) 줄은
+    # 각자 뒤에서 처리하므로 여기서는 건드리지 않는다.
+    staged = _join_open_bold(staged, ("<", "```", "|", "$$", ">", "#", "\x00"))
     staged = _convert_tables(staged)
     staged = _merge_quotes(staged)
     staged = [_convert_inline_math(ln) for ln in staged]
