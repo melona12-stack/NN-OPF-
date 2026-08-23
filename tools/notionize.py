@@ -84,6 +84,10 @@ def notionize(text: str) -> str:
         if s.startswith(("<tr>", "<td>", "</tr>", "<colgroup>", "<col", "</colgroup>")):
             out.append(s)
             continue
+        m = re.match(r"^(\s*- \[[ x]\] )(.*)$", line)
+        if m:                                          # 체크박스 표시는 이스케이프 안 됨
+            out.append(m.group(1) + escape_specials(drop_odd_bold(m.group(2))))
+            continue
         out.append(escape_specials(drop_odd_bold(line)))
     return "\n".join(out)
 
