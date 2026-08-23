@@ -5,6 +5,12 @@
   "python.testing.pytestEnabled": true,
   "python.testing.pytestArgs": ["tests"],
   "terminal.integrated.defaultProfile.windows": "PowerShell",
+
+  // 터미널 오른쪽 목록을 **항상** 띄운다. 기본값(singleTerminal)이면 터미널이
+  // 하나만 남는 순간 목록이 통째로 사라져서, 어떤 작업이 도는 중인지 안 보인다.
+  // 작업(tasks.json)마다 터미널이 따로 뜨므로 이 목록이 곧 실행 현황판이다.
+  "terminal.integrated.tabs.hideCondition": "never",
+  "terminal.integrated.tabs.location": "right",
   "files.exclude": { "**/__pycache__": true, "**/*.pyc": true },
   "editor.rulers": [88],
   "[python]": { "editor.tabSize": 4 },
