@@ -86,6 +86,13 @@ HEAD = (
 DEVICE = "cpu"     # main() 이 --device 로 정한다
 
 
+def ckpt_path(a, suffix: str = "") -> str | None:
+    """실행마다 다른 중간 저장 경로. λ 스윕이면 λ 값이 이름에 들어간다."""
+    if a.no_ckpt:
+        return None
+    return str(ROOT / "results" / f"{a.case}{a.tag}_{a.model}{suffix}.ckpt")
+
+
 def run_one(ds, spec: SurrogateSpec, cfg: TrainConfig, split=None, quiet=False):
     b, model = prepare(ds, spec, split=split, device=DEVICE,
                        jac_alpha=cfg.jac_alpha)
@@ -105,6 +112,12 @@ def main() -> int:
     p.add_argument("--threads", type=int, default=2, help="torch 스레드 (작은 배치라 2가 최적)")
     p.add_argument("--device", default="auto", choices=["auto", "cpu", "cuda"],
                    help="auto 는 쓸 수 있으면 GPU. 잔차 측정은 항상 CPU float64")
+
+    p.add_argument("--resume", action="store_true",
+                   help="중간 저장본이 있으면 거기서 이어서 돌린다. "
+                        "저장은 항상 하므로 끊긴 뒤에 이 옵션만 붙이면 된다")
+    p.add_argument("--no-ckpt", action="store_true",
+                   help="중간 저장을 아예 끈다 (짧은 실험용)")
 
     p.add_argument("--model", default="mlp", choices=["mlp", "gat"],
                    help="gat = 그래프 어텐션 (M4). 입출력 계약은 같다")
@@ -252,7 +265,9 @@ def main() -> int:
                 continue
             sub = dict(split_full)
             sub["train"] = rng.permutation(split_full["train"])[:size]
-            cfg = TrainConfig(lam=lam, **base_cfg)
+            cfg = TrainConfig(lam=lam, resume=a.resume,
+                              ckpt_path=ckpt_path(a, f"_n{size}_lam{lam:g}"),
+                              **base_cfg)
             t = time.time()
             _, _, r, m = run_one(ds, spec, cfg, split=sub, quiet=True)
             print(fmt_row(f"n={size}", m, time.time() - t, f"ep{r['epochs_run']}"))
@@ -262,7 +277,8 @@ def main() -> int:
     # ---------------------------------------------------------- λ 민감도
     elif a.lam_sweep:
         for lam in a.lam_sweep:
-            cfg = TrainConfig(lam=lam, **base_cfg)
+            cfg = TrainConfig(lam=lam, resume=a.resume,
+                              ckpt_path=ckpt_path(a, f"_lam{lam:g}"), **base_cfg)
             t = time.time()
             _, _, r, m = run_one(ds, spec, cfg, split=split_full, quiet=True)
             print(fmt_row(f"λ={lam:g}", m, time.time() - t, f"ep{r['epochs_run']}"))
@@ -272,7 +288,8 @@ def main() -> int:
     # ------------------------------------------------------------- 단일 학습
     else:
         lam = a.lam if a.lam is not None else 0.0
-        cfg = TrainConfig(lam=lam, **base_cfg)
+        cfg = TrainConfig(lam=lam, resume=a.resume, ckpt_path=ckpt_path(a),
+                          **base_cfg)
         t = time.time()
         model, b, r, m = run_one(ds, spec, cfg, split=split_full)
         print()

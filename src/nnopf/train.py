@@ -78,6 +78,20 @@ class TrainConfig:
     lr_patience: int = 30
     seed: int = 0
 
+    # 중간 저장. 긴 학습(GAT 8층이 55분, 12층이 2.5시간)이 끊기면 통째로
+    # 날아간다 — 실제로 터미널을 잘못 닫아 55분을 잃은 적이 있다.
+    # ckpt_path 를 주면 ckpt_every epoch 마다 상태를 저장하고, 같은 경로에
+    # 파일이 있으면 **거기서 이어서** 돌린다. 학습이 끝나면 지운다.
+    #
+    # 재현성을 지키려고 난수 상태(torch·numpy)까지 같이 저장한다. 안 그러면
+    # 이어달린 결과가 한 번에 돌린 결과와 달라져 비교가 깨진다.
+    ckpt_path: str | None = None
+    ckpt_every: int = 50
+    # 중간 저장본이 있어도 **명시할 때만** 이어서 돌린다. 자동으로 이으면
+    # 하이퍼파라미터를 바꾸고 같은 태그로 돌렸을 때 옛 학습이 조용히
+    # 되살아난다. 그래도 설정이 다르면 거부하도록 지문을 같이 저장한다.
+    resume: bool = False
+
     # 학습을 멈출 시점과 되돌릴 가중치를 **무엇으로 고를 것인가**.
     #
     #   "loss" — 표준화 지도손실. 무작위 분할에서는 이걸로 충분하다.
@@ -645,6 +659,16 @@ def evaluate(
 # --------------------------------------------------------------------------
 # 학습
 # --------------------------------------------------------------------------
+def _config_fingerprint(cfg: TrainConfig) -> str:
+    """이어달리기가 **같은 실험**인지 확인할 지문.
+
+    저장 경로·주기처럼 학습 결과와 무관한 항목은 뺀다.
+    """
+    d = {k: v for k, v in asdict(cfg).items()
+         if k not in ("ckpt_path", "ckpt_every", "resume")}
+    return json.dumps(d, sort_keys=True, ensure_ascii=False)
+
+
 def train(
     model: PowerFlowMLP,
     b: Bundle,
@@ -677,7 +701,48 @@ def train(
     t0 = time.time()
 
     phys_ref = 1.0     # 물리 항을 지도 항과 같은 크기로 맞추는 환산계수
-    for ep in range(cfg.epochs):
+    start_ep = 0
+    prior_secs = 0.0
+    ck = Path(cfg.ckpt_path) if cfg.ckpt_path else None
+    fp = _config_fingerprint(cfg)
+    if ck is not None and ck.exists() and cfg.resume:
+        st = torch.load(ck, map_location=b.device, weights_only=False)
+        if st.get("fingerprint") != fp:
+            raise SystemExit(
+                f"중간 저장본의 설정이 지금과 다릅니다: {ck}\n"
+                f"  저장본: {st.get('fingerprint')}\n"
+                f"  지금  : {fp}\n"
+                "같은 태그로 다른 설정을 돌리려는 것이면 그 파일을 지우세요."
+            )
+        model.load_state_dict(st["model"])
+        opt.load_state_dict(st["opt"])
+        sched.load_state_dict(st["sched"])
+        best, best_epoch = st["best"], st["best_epoch"]
+        best_state = {k: v.to(b.device) for k, v in st["best_state"].items()}
+        hist, phys_ref = st["hist"], st["phys_ref"]
+        start_ep, prior_secs = st["epoch"] + 1, st["seconds"]
+        torch.set_rng_state(st["rng_torch"])
+        np.random.set_state(st["rng_numpy"])
+        if verbose:
+            print(f"  [재개] epoch {start_ep} 부터 (최고 {best_epoch}, "
+                  f"이미 {prior_secs/60:.1f}분 돌았음)")
+
+    def save_ckpt(ep: int) -> None:
+        if ck is None:
+            return
+        ck.parent.mkdir(parents=True, exist_ok=True)
+        tmp = ck.with_suffix(ck.suffix + ".tmp")
+        torch.save({
+            "epoch": ep, "model": model.state_dict(), "opt": opt.state_dict(),
+            "sched": sched.state_dict(), "best": best, "best_epoch": best_epoch,
+            "best_state": {k: v.cpu() for k, v in best_state.items()},
+            "hist": hist, "phys_ref": phys_ref, "fingerprint": fp,
+            "seconds": prior_secs + time.time() - t0,
+            "rng_torch": torch.get_rng_state(), "rng_numpy": np.random.get_state(),
+        }, tmp)
+        tmp.replace(ck)     # 저장 중에 죽어도 이전 체크포인트가 남도록
+
+    for ep in range(start_ep, cfg.epochs):
         lam = lambda_at(ep, cfg)
         if lam > 0 and phys_ref == 1.0:
             # λ 를 '지도 항 대비 몇 배' 로 해석되게 만든다. 두 항의 절대 크기가
@@ -734,6 +799,9 @@ def train(
                 print(f"  조기 종료 (epoch {ep}, 최고 {best_epoch})")
             break
 
+        if cfg.ckpt_every > 0 and ep % cfg.ckpt_every == 0:
+            save_ckpt(ep)
+
         if verbose and (ep % log_every == 0 or ep == cfg.epochs - 1):
             extra = f"  P/부하 {vphys:.2f}%" if cfg.select == "phys" else ""
             print(
@@ -742,13 +810,15 @@ def train(
             )
 
     model.load_state_dict(best_state)
+    if ck is not None and ck.exists():
+        ck.unlink()            # 끝났으니 중간 저장본은 지운다
     return {
         "phys_ref": phys_ref,
         "history": hist,
         "best_epoch": best_epoch,
         "best_val": best,          # cfg.select 가 가리키는 기준의 최고값
         "select": cfg.select,
-        "seconds": time.time() - t0,
+        "seconds": prior_secs + time.time() - t0,
         "epochs_run": len(hist),
     }
 

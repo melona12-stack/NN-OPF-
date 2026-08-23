@@ -611,3 +611,74 @@ def test_vlim_metric_tolerates_float32_resolution():
 
     # 고치기 전에는 어떤 모델이든 정확히 이 값이 나왔다.
     assert abs(viol - 100 / 118) > 1e-9, "슬랙 설정값이 위반으로 세어지고 있다"
+
+
+def _stop_after(monkeypatch, epoch: int):
+    """``epoch`` 번째 epoch 이 시작될 때 학습을 끊는다 (중단 흉내).
+
+    ``lambda_at`` 은 epoch 마다 루프 맨 위에서 딱 한 번 불리므로 epoch
+    계수기로 쓰기 좋다.
+    """
+    import nnopf.train as T
+    real = T.lambda_at
+
+    def boom(ep, cfg):
+        if ep >= epoch:
+            raise KeyboardInterrupt("모의 중단")
+        return real(ep, cfg)
+
+    monkeypatch.setattr(T, "lambda_at", boom)
+
+
+def test_resume_reproduces_an_uninterrupted_run(ds, tmp_path, monkeypatch):
+    """이어달린 학습이 한 번에 돌린 것과 **똑같아야** 한다.
+
+    긴 학습이 끊기면 통째로 날아가므로 중간 저장을 넣었는데, 이어달린
+    결과가 달라지면 비교가 깨진다 (06 문서 §5.3 의 "같은 조건" 규칙).
+    그래서 난수 상태까지 저장한다.
+    """
+    sp = ds.split_random(seed=0)
+    ck = tmp_path / "r.ckpt"
+    kw = dict(epochs=12, batch=64, seed=0)
+
+    # ① 한 번에 12 epoch
+    b0, m0 = prepare(ds, _spec(), split=sp, seed=0)
+    r0 = train(m0, b0, TrainConfig(**kw), verbose=False)
+
+    # ② epoch 6 에서 끊고 (중간 저장본은 epoch 4) 이어서 12 까지
+    b1, m1 = prepare(ds, _spec(), split=sp, seed=0)
+    with monkeypatch.context() as mp:
+        _stop_after(mp, 6)
+        with pytest.raises(KeyboardInterrupt):
+            train(m1, b1, TrainConfig(ckpt_path=str(ck), ckpt_every=2, **kw),
+                  verbose=False)
+    assert ck.exists(), "끊겼으면 중간 저장본이 남아 있어야 한다"
+
+    r1 = train(m1, b1, TrainConfig(resume=True, ckpt_path=str(ck),
+                                   ckpt_every=2, **kw), verbose=False)
+
+    assert not ck.exists(), "학습이 끝나면 중간 저장본을 지워야 한다"
+    assert r1["epochs_run"] == r0["epochs_run"]
+    assert r1["best_epoch"] == r0["best_epoch"]
+    for p0, p1 in zip(m0.parameters(), m1.parameters()):
+        assert torch.equal(p0, p1), "가중치가 비트 단위로 같아야 한다"
+
+
+def test_resume_refuses_a_different_config(ds, tmp_path, monkeypatch):
+    """설정이 다른 중간 저장본으로는 이어달리면 안 된다.
+
+    같은 태그로 하이퍼파라미터만 바꿔 돌렸을 때 옛 학습이 조용히
+    되살아나는 것이 가장 위험하다.
+    """
+    sp = ds.split_random(seed=0)
+    ck = tmp_path / "r.ckpt"
+    b, m = prepare(ds, _spec(), split=sp, seed=0)
+    with monkeypatch.context() as mp:
+        _stop_after(mp, 4)
+        with pytest.raises(KeyboardInterrupt):
+            train(m, b, TrainConfig(epochs=12, batch=64, seed=0, lr=1e-3,
+                                    ckpt_path=str(ck), ckpt_every=2), verbose=False)
+
+    with pytest.raises(SystemExit, match="설정이 지금과 다릅니다"):
+        train(m, b, TrainConfig(epochs=12, batch=64, seed=0, lr=2e-3,
+                                resume=True, ckpt_path=str(ck)), verbose=False)
