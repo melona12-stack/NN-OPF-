@@ -258,6 +258,18 @@
       "problemMatcher": []
     },
     {
+      "label": "40. M4 ★★★★ case118 무작위 + lstsq — 합격선 한 칸이 통째로 미시도 (10분)",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s03_train_surrogate.py --case case118 -n 60000 --epochs 1500 --lr 2e-3 --split random --skip-init lstsq --tag _lsq_rand",
+      "problemMatcher": []
+    },
+    {
+      "label": "41. M4 ★★ case30 무작위 + lstsq — 대조군 (5분)",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/s03_train_surrogate.py --case case30 -n 30000 --epochs 1500 --lr 2e-3 --split random --skip-init lstsq --tag _lsq_rand",
+      "problemMatcher": []
+    },
+    {
       "label": "28. 업로드 — results/ 를 GitHub 로",
       "type": "shell",
       "command": "powershell -ExecutionPolicy Bypass -File ${workspaceFolder}/scripts/gpu_run.ps1 --commit-only",
