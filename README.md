@@ -11,7 +11,7 @@
 | 1 | OPF 기본 개념 학습 + 직접 구현 | ✅ 완료 |
 | 2 | pandapower 대조 정합성 검증 | ✅ 완료 — 기계정밀도 일치 |
 | 3 | NN 관련 스터디 + 학습 데이터 생성 | ✅ 완료 — 논문 4편 정독 ✅, 데이터 생성기 ✅ |
-| 4 | NN 으로 조류계산 대체(학습) | 🔄 진행 중 — **MLP 기준선 ✅**, GAT 🔄 (첫 시도 실패) |
+| 4 | NN 으로 조류계산 대체(학습) | 🔄 진행 중 — 벤치마크 **네 칸 중 세 칸 승** ✅, 그래프 신경망 🔄 (아직 MLP 에 짐) |
 | 5 | 대체모델을 포함한 OPF | ⬜ |
 
 **개발 환경**: **RTX 5060**(Blackwell, sm_120, 8GB) + CUDA 12.8 스택 도입 완료.
@@ -46,8 +46,12 @@ PyTorch는 반드시 `cu128` 이상 빌드여야 합니다 — 그 이전 빌드
 | [`05_dataset_generator.md`](docs/05_dataset_generator.md) | 학습 데이터 생성기 (설계·검증·잡은 버그 2개) | 01, 03, 04 |
 | [`06_surrogate_training.md`](docs/06_surrogate_training.md) | **4단계 대체모델 학습 — 기준선 결과와 잡은 버그 6개** | 03, 05 |
 | [`07_appendix_reference.md`](docs/07_appendix_reference.md) | 부록 — Stanford ASL 참고자료 분석 (5단계에서 다시 봄) | 01 |
+| [`08_math_reference.md`](docs/08_math_reference.md) | **수식과 코드 대조표** — 식 64개가 각각 어느 줄인지 | 01, 03 |
 
 같은 내용이 Notion에도 정리되어 있습니다 (`tools/md_to_notion.py` 로 변환).
+
+> **코딩 에이전트로 이 저장소를 여셨다면 [`AGENTS.md`](AGENTS.md) 를 먼저
+> 읽으세요.** 일하는 방식, 지금 상태, 이미 밟은 함정, 다음에 할 일이 있습니다.
 
 ### 배경 논문 4편
 
